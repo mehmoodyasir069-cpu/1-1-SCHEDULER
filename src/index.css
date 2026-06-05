@@ -84,4 +84,18 @@
   #root {
     min-height: 100vh;
   }
+
+  select,
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="time"],
+  input[type="week"] {
+    color-scheme: dark;
+  }
+
+  select option {
+    background-color: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+  }
 }

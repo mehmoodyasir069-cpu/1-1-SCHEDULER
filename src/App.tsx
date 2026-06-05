@@ -125,6 +125,9 @@ const navItems: Array<{
 const fieldClass =
   "flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground shadow-sm outline-none transition placeholder:text-slate-400 focus:border-orange-400/60 focus:ring-2 focus:ring-orange-400/20";
 
+const selectFieldClass = cn(fieldClass, "bg-slate-950/90 text-slate-100");
+const darkControlStyle = { colorScheme: "dark" as const };
+
 function createSessionDraft(overrides: Partial<SessionDraft> = {}): SessionDraft {
   return {
     studentId: "",
@@ -1155,7 +1158,8 @@ export default function App() {
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Student">
               <select
-                className={fieldClass}
+                className={selectFieldClass}
+                style={darkControlStyle}
                 value={editSessionDraft.studentId}
                 onChange={(event) =>
                   setEditSessionDraft((draft) => ({
@@ -1198,7 +1202,8 @@ export default function App() {
               </Field>
               <Field label="Length">
                 <select
-                  className={fieldClass}
+                  className={selectFieldClass}
+                  style={darkControlStyle}
                   value={editSessionDraft.durationMinutes}
                   onChange={(event) =>
                     setEditSessionDraft((draft) => ({
@@ -1621,7 +1626,8 @@ function ScheduleView({
               <div className="grid gap-3">
                 <Field label="Student">
                   <select
-                    className={fieldClass}
+                    className={selectFieldClass}
+                    style={darkControlStyle}
                     value={sessionDraft.studentId}
                     onChange={(event) =>
                       setSessionDraft((draft) => ({
@@ -1664,7 +1670,8 @@ function ScheduleView({
                   </Field>
                   <Field label="Length">
                     <select
-                      className={fieldClass}
+                      className={selectFieldClass}
+                      style={darkControlStyle}
                       value={sessionDraft.durationMinutes}
                       onChange={(event) =>
                         setSessionDraft((draft) => ({
@@ -2000,7 +2007,8 @@ function FeesView({
         <CardContent className="space-y-3">
           <div className="grid gap-3">
             <select
-              className={fieldClass}
+              className={selectFieldClass}
+              style={darkControlStyle}
               value={selectedFeeStudentId}
               onChange={(event) =>
                 setSelectedFeeStudentId(event.target.value as Id<"students">)
