@@ -90,6 +90,14 @@ type FeeDoc = {
   updatedAt: number;
 };
 
+type SessionDraft = {
+  studentId: string;
+  date: string;
+  time: string;
+  durationMinutes: string;
+  note: string;
+};
+
 type StudentRow = {
   student: StudentDoc;
   fee?: FeeDoc;
@@ -117,6 +125,17 @@ const navItems: Array<{
 const fieldClass =
   "flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground shadow-sm outline-none transition placeholder:text-slate-400 focus:border-orange-400/60 focus:ring-2 focus:ring-orange-400/20";
 
+function createSessionDraft(overrides: Partial<SessionDraft> = {}): SessionDraft {
+  return {
+    studentId: "",
+    date: localDateKey(Date.now()),
+    time: "19:00",
+    durationMinutes: "60",
+    note: "",
+    ...overrides,
+  };
+}
+
 export default function App() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
   const [notice, setNotice] = useState<string | null>(null);
@@ -134,6 +153,8 @@ export default function App() {
   const addStudent = useMutation(api.crm.addStudent);
   const saveFeeAccount = useMutation(api.crm.saveFeeAccount);
   const scheduleSession = useMutation(api.crm.scheduleSession);
+  const updateSession = useMutation(api.crm.updateSession);
+  const deleteSession = useMutation(api.crm.deleteSession);
   const setSessionStatus = useMutation(api.crm.setSessionStatus);
   const postponeSession = useMutation(api.crm.postponeSession);
 
@@ -147,8 +168,10 @@ export default function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<
     Id<"sessions"> | ""
   >("");
+  const [editingSessionId, setEditingSessionId] = useState<Id<"sessions"> | "">("");
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [feeEditorOpen, setFeeEditorOpen] = useState(false);
+  const [editSessionOpen, setEditSessionOpen] = useState(false);
   const [postponeOpen, setPostponeOpen] = useState(false);
 
   const [studentDraft, setStudentDraft] = useState({
@@ -161,13 +184,11 @@ export default function App() {
     note: "",
   });
 
-  const [sessionDraft, setSessionDraft] = useState({
-    studentId: "",
-    date: localDateKey(Date.now()),
-    time: "19:00",
-    durationMinutes: "60",
-    note: "",
-  });
+  const [sessionDraft, setSessionDraft] = useState<SessionDraft>(createSessionDraft());
+
+  const [editSessionDraft, setEditSessionDraft] = useState<SessionDraft>(
+    createSessionDraft(),
+  );
 
   const [feeDraft, setFeeDraft] = useState({
     amountPaid: "0",
@@ -177,12 +198,9 @@ export default function App() {
     note: "",
   });
 
-  const [postponeDraft, setPostponeDraft] = useState({
-    date: localDateKey(Date.now()),
-    time: "19:00",
-    durationMinutes: "60",
-    note: "",
-  });
+  const [postponeDraft, setPostponeDraft] = useState<SessionDraft>(
+    createSessionDraft(),
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick(Date.now()), 60_000);
@@ -385,6 +403,7 @@ export default function App() {
   useEffect(() => {
     if (selectedSession) {
       setPostponeDraft({
+        studentId: String(selectedSession.studentId),
         date: toDateInputValue(selectedSession.startAt + 7 * 24 * 60 * 60 * 1000),
         time: toTimeInputValue(selectedSession.startAt),
         durationMinutes: String(selectedSession.durationMinutes),
@@ -424,6 +443,23 @@ export default function App() {
   const openFeeEditor = (studentId: Id<"students">) => {
     setSelectedFeeStudentId(studentId);
     setFeeEditorOpen(true);
+  };
+
+  const openEditSession = (session: SessionDoc) => {
+    setEditingSessionId(session._id);
+    setEditSessionDraft({
+      studentId: String(session.studentId),
+      date: toDateInputValue(session.startAt),
+      time: toTimeInputValue(session.startAt),
+      durationMinutes: String(session.durationMinutes),
+      note: session.note ?? "",
+    });
+    setEditSessionOpen(true);
+  };
+
+  const closeEditSession = () => {
+    setEditSessionOpen(false);
+    setEditingSessionId("");
   };
 
   const openPostponeDialog = (sessionId: Id<"sessions">) => {
@@ -515,6 +551,57 @@ export default function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not schedule session.";
+      showError(message);
+    }
+  };
+
+  const handleUpdateSession = async () => {
+    try {
+      if (!editingSessionId) {
+        throw new Error("Choose a session to edit first.");
+      }
+      if (!editSessionDraft.studentId) {
+        throw new Error("Choose a student before saving changes.");
+      }
+      const startAt = parseLocalDateTime(editSessionDraft.date, editSessionDraft.time);
+      await updateSession({
+        sessionId: editingSessionId,
+        studentId: editSessionDraft.studentId as Id<"students">,
+        startAt,
+        durationMinutes: Number(editSessionDraft.durationMinutes || 60),
+        note: editSessionDraft.note.trim() || null,
+      });
+      closeEditSession();
+      showSuccess("Session updated.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not update session.";
+      showError(message);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: Id<"sessions">) => {
+    try {
+      const session = (sessions ?? []).find((candidate) => candidate._id === sessionId);
+      const confirmed = window.confirm(
+        `Remove ${session?.studentName ?? "this session"} from the calendar? This action cannot be undone.`,
+      );
+      if (!confirmed) return;
+
+      await deleteSession({ sessionId });
+
+      if (String(editingSessionId) === String(sessionId)) {
+        closeEditSession();
+      }
+      if (String(selectedSessionId) === String(sessionId)) {
+        setPostponeOpen(false);
+        setSelectedSessionId("");
+      }
+
+      showSuccess("Session removed from the calendar.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not delete session.";
       showError(message);
     }
   };
@@ -732,6 +819,8 @@ export default function App() {
                   sessionsByDate={sessionsByDate}
                   scheduledSessions={scheduledSessions}
                   onAddSession={handleScheduleSession}
+                  onEditSession={openEditSession}
+                  onDeleteSession={handleDeleteSession}
                 />
               ) : null}
 
@@ -741,6 +830,8 @@ export default function App() {
                   studentRows={studentRows}
                   onStatusChange={handleSessionStatus}
                   onPostpone={openPostponeDialog}
+                  onEditSession={openEditSession}
+                  onDeleteSession={handleDeleteSession}
                 />
               ) : null}
 
@@ -1040,6 +1131,127 @@ export default function App() {
               Postpone and reschedule
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editSessionOpen}
+        onOpenChange={(open) => {
+          setEditSessionOpen(open);
+          if (!open) {
+            setEditingSessionId("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl border-white/10 bg-slate-950/95 text-foreground">
+          <DialogHeader>
+            <DialogTitle>Edit session</DialogTitle>
+            <DialogDescription>
+              Change the student, exact date, time, length, or notes. Remove the
+              slot if it is no longer needed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Student">
+              <select
+                className={fieldClass}
+                value={editSessionDraft.studentId}
+                onChange={(event) =>
+                  setEditSessionDraft((draft) => ({
+                    ...draft,
+                    studentId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">-- Select student --</option>
+                {students?.map((student) => (
+                  <option key={String(student._id)} value={String(student._id)}>
+                    {student.order.toString().padStart(2, "0")} · {student.name}
+                  </option>
+                )) ?? null}
+              </select>
+            </Field>
+            <Field label="Exact date">
+              <Input
+                className={fieldClass}
+                type="date"
+                value={editSessionDraft.date}
+                onChange={(event) =>
+                  setEditSessionDraft((draft) => ({ ...draft, date: event.target.value }))
+                }
+              />
+            </Field>
+            <div className="grid gap-3 md:grid-cols-2 md:col-span-2">
+              <Field label="Time">
+                <Input
+                  className={fieldClass}
+                  type="time"
+                  value={editSessionDraft.time}
+                  onChange={(event) =>
+                    setEditSessionDraft((draft) => ({
+                      ...draft,
+                      time: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="Length">
+                <select
+                  className={fieldClass}
+                  value={editSessionDraft.durationMinutes}
+                  onChange={(event) =>
+                    setEditSessionDraft((draft) => ({
+                      ...draft,
+                      durationMinutes: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="45">45 min</option>
+                  <option value="60">60 min</option>
+                  <option value="90">90 min</option>
+                  <option value="120">120 min</option>
+                </select>
+              </Field>
+            </div>
+          </div>
+
+          <Field label="Notes">
+            <textarea
+              className={cn(fieldClass, "min-h-24 pt-2")}
+              value={editSessionDraft.note}
+              onChange={(event) =>
+                setEditSessionDraft((draft) => ({ ...draft, note: event.target.value }))
+              }
+              placeholder="Optional session note"
+            />
+          </Field>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              variant="destructive"
+              type="button"
+              onClick={() => {
+                if (editingSessionId) {
+                  void handleDeleteSession(editingSessionId);
+                }
+              }}
+            >
+              Remove session
+            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                variant="outline"
+                onClick={() => closeEditSession()}
+                type="button"
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleUpdateSession} type="button">
+                Save changes
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -1362,6 +1574,8 @@ function ScheduleView({
   sessionsByDate,
   scheduledSessions,
   onAddSession,
+  onEditSession,
+  onDeleteSession,
 }: {
   students: StudentDoc[];
   sessionDraft: {
@@ -1386,6 +1600,8 @@ function ScheduleView({
   sessionsByDate: Map<string, SessionDoc[]>;
   scheduledSessions: SessionDoc[];
   onAddSession: () => void;
+  onEditSession: (session: SessionDoc) => void;
+  onDeleteSession: (sessionId: Id<"sessions">) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -1394,7 +1610,7 @@ function ScheduleView({
           <div>
             <CardTitle>Calendar</CardTitle>
             <CardDescription>
-              Schedule exact dates and keep sessions clear of each other.
+              Schedule exact dates, then click any session to edit or remove it.
             </CardDescription>
           </div>
           <Button onClick={onAddSession}>+ Add Session</Button>
@@ -1524,13 +1740,23 @@ function ScheduleView({
                       </div>
                       <div className="space-y-1">
                         {daySessions.slice(0, 2).map((session) => (
-                          <div
+                          <button
                             key={String(session._id)}
-                            className="rounded-lg border border-orange-400/20 bg-orange-400/10 px-2 py-1 text-xs text-orange-100"
+                            type="button"
+                            onClick={() => onEditSession(session)}
+                            className="w-full rounded-lg border border-orange-400/20 bg-orange-400/10 px-2 py-1 text-left text-xs text-orange-100 transition hover:border-orange-300/50 hover:bg-orange-400/20"
+                            title="Click to edit or remove this session"
                           >
-                            {formatDateTime(session.startAt).split(", ").slice(1).join(" ")}{" "}
-                            {session.studentName}
-                          </div>
+                            <div className="font-medium">
+                              {formatDateTime(session.startAt)
+                                .split(", ")
+                                .slice(1)
+                                .join(" ")}
+                            </div>
+                            <div className="text-[11px] text-orange-50/80">
+                              {session.studentName}
+                            </div>
+                          </button>
                         ))}
                         {daySessions.length > 2 ? (
                           <div className="text-xs text-slate-400">
@@ -1551,7 +1777,8 @@ function ScheduleView({
         <CardHeader>
           <CardTitle>Upcoming sessions</CardTitle>
           <CardDescription>
-            The calendar above shows the active booked slots.
+            The calendar above shows the active booked slots. Use edit or remove
+            to adjust them.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1564,6 +1791,18 @@ function ScheduleView({
               <div className="mt-1 text-sm text-slate-300">{formatDateTime(session.startAt)}</div>
               <div className="mt-1 text-xs text-slate-500">
                 {session.durationMinutes} minutes
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => onEditSession(session)}>
+                  Edit
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => onDeleteSession(session._id)}
+                >
+                  Remove
+                </Button>
               </div>
             </div>
           ))}
@@ -1581,6 +1820,8 @@ function SessionLogView({
   studentRows,
   onStatusChange,
   onPostpone,
+  onEditSession,
+  onDeleteSession,
 }: {
   sessions: SessionDoc[];
   studentRows: StudentRow[];
@@ -1589,13 +1830,16 @@ function SessionLogView({
     status: "done" | "canceled" | "postponed",
   ) => Promise<void>;
   onPostpone: (sessionId: Id<"sessions">) => void;
+  onEditSession: (session: SessionDoc) => void;
+  onDeleteSession: (sessionId: Id<"sessions">) => void;
 }) {
   return (
     <Card className="border-white/10 bg-white/5">
       <CardHeader>
         <CardTitle>Session log</CardTitle>
         <CardDescription>
-          Mark each scheduled session as done, canceled, or postponed.
+          Mark each scheduled session as done, canceled, postponed, edited, or
+          removed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -1641,6 +1885,13 @@ function SessionLogView({
                         <Button
                           variant="outline"
                           size="sm"
+                          onClick={() => onEditSession(session)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => onPostpone(session._id)}
                         >
                           Postpone
@@ -1651,6 +1902,13 @@ function SessionLogView({
                           onClick={() => onStatusChange(session._id, "canceled")}
                         >
                           Cancel
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => onDeleteSession(session._id)}
+                        >
+                          Remove
                         </Button>
                       </>
                     ) : (

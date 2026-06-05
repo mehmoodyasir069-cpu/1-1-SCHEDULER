@@ -24,6 +24,34 @@ async function getStudentMap(ctx: any): Promise<Map<string, any>> {
   return new Map(students.map((student: any) => [student.name, student]));
 }
 
+async function ensureSessionSlotIsAvailable(
+  ctx: any,
+  startAt: number,
+  endAt: number,
+  excludeSessionId?: string,
+) {
+  const existingSessions = await ctx.db
+    .query("sessions")
+    .withIndex("by_startAt")
+    .collect();
+
+  const overlapping = existingSessions.find((session: any) => {
+    if (session.status !== "scheduled") return false;
+    if (excludeSessionId && String(session._id) === String(excludeSessionId)) {
+      return false;
+    }
+    return startAt < session.endAt && endAt > session.startAt;
+  });
+
+  if (overlapping) {
+    throw new Error(
+      `This slot overlaps with ${overlapping.studentName} on ${new Date(
+        overlapping.startAt,
+      ).toLocaleString("en-GB")}.`,
+    );
+  }
+}
+
 export const ensureSeedData = mutation({
   args: {},
   handler: async (ctx) => {
@@ -239,23 +267,7 @@ export const scheduleSession = mutation({
     }
 
     const endAt = args.startAt + args.durationMinutes * 60 * 1000;
-    const existingSessions = await ctx.db
-      .query("sessions")
-      .withIndex("by_startAt")
-      .collect();
-
-    const overlapping = existingSessions.find((session) => {
-      if (session.status !== "scheduled") return false;
-      return args.startAt < session.endAt && endAt > session.startAt;
-    });
-
-    if (overlapping) {
-      throw new Error(
-        `This slot overlaps with ${overlapping.studentName} on ${new Date(
-          overlapping.startAt,
-        ).toLocaleString("en-GB")}.`,
-      );
-    }
+    await ensureSessionSlotIsAvailable(ctx, args.startAt, endAt);
 
     const now = Date.now();
     return await ctx.db.insert("sessions", {
@@ -310,25 +322,12 @@ export const postponeSession = mutation({
       throw new Error("Session not found.");
     }
 
-    const endAt = args.startAt + args.durationMinutes * 60 * 1000;
-    const existingSessions = await ctx.db
-      .query("sessions")
-      .withIndex("by_startAt")
-      .collect();
-
-    const overlapping = existingSessions.find((candidate) => {
-      if (candidate.status !== "scheduled") return false;
-      if (candidate._id === args.sessionId) return false;
-      return args.startAt < candidate.endAt && endAt > candidate.startAt;
-    });
-
-    if (overlapping) {
-      throw new Error(
-        `The new slot overlaps with ${overlapping.studentName} on ${new Date(
-          overlapping.startAt,
-        ).toLocaleString("en-GB")}.`,
-      );
+    if (session.status !== "scheduled") {
+      throw new Error("Only scheduled sessions can be postponed.");
     }
+
+    const endAt = args.startAt + args.durationMinutes * 60 * 1000;
+    await ensureSessionSlotIsAvailable(ctx, args.startAt, endAt, args.sessionId);
 
     const now = Date.now();
     await ctx.db.patch(args.sessionId, {
@@ -348,5 +347,64 @@ export const postponeSession = mutation({
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+export const updateSession = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    studentId: v.id("students"),
+    startAt: v.number(),
+    durationMinutes: v.number(),
+    note: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found.");
+    }
+
+    if (session.status !== "scheduled") {
+      throw new Error("Only scheduled sessions can be edited.");
+    }
+
+    const student = await ctx.db.get(args.studentId);
+    if (!student) {
+      throw new Error("Student not found.");
+    }
+
+    const endAt = args.startAt + args.durationMinutes * 60 * 1000;
+    await ensureSessionSlotIsAvailable(ctx, args.startAt, endAt, args.sessionId);
+
+    await ctx.db.patch(args.sessionId, {
+      studentId: student._id,
+      studentName: student.name,
+      startAt: args.startAt,
+      endAt,
+      durationMinutes: args.durationMinutes,
+      note: args.note,
+      updatedAt: Date.now(),
+    });
+
+    return args.sessionId;
+  },
+});
+
+export const deleteSession = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found.");
+    }
+
+    if (session.status !== "scheduled") {
+      throw new Error("Only scheduled sessions can be removed.");
+    }
+
+    await ctx.db.delete(args.sessionId);
+    return args.sessionId;
   },
 });
