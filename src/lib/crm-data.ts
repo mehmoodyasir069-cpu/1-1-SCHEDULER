@@ -216,14 +216,16 @@ export function formatDateOnly(value: string | number | null) {
 export function formatDateTime(value: number | string | null) {
   if (value === null) return "Date not logged";
   const date = typeof value === "number" ? new Date(value) : new Date(value);
-  return new Intl.DateTimeFormat("en-GB", {
+  const formatted = new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   }).format(date);
+  return formatted.replace(/\b(am|pm)\b/i, (match) => match.toUpperCase());
 }
 
 export function formatMonthYear(value: Date) {
@@ -291,4 +293,3 @@ export function isSameDay(left: number, right: number) {
 export function toIsoDateOnly(value: number) {
   return new Date(value).toISOString().slice(0, 10);
 }
-
