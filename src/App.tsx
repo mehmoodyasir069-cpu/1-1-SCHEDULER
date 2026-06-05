@@ -1,0 +1,2163 @@
+﻿import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import { useMutation, useQuery } from "convex/react";
+import type { Id } from "../convex/_generated/dataModel";
+import { api } from "../convex/_generated/api";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import {
+  addMonths,
+  buildMonthGrid,
+  formatCurrency,
+  formatDateOnly,
+  formatDateTime,
+  formatMonthYear,
+  isSameMonth,
+  localDateKey,
+  parseLocalDateTime,
+  startOfMonth,
+  totalCourseFee,
+} from "@/lib/crm-data";
+
+type ViewKey =
+  | "dashboard"
+  | "students"
+  | "schedule"
+  | "session-log"
+  | "fees"
+  | "backup";
+
+type StudentDoc = {
+  _id: Id<"students">;
+  order: number;
+  name: string;
+  initials: string;
+  active: boolean;
+  introDone: boolean;
+  sessionGoal: number;
+  note: string;
+  createdAt: number;
+};
+
+type SessionDoc = {
+  _id: Id<"sessions">;
+  studentId: Id<"students">;
+  studentName: string;
+  startAt: number;
+  endAt: number;
+  durationMinutes: number;
+  status: "scheduled" | "done" | "postponed" | "canceled";
+  note: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type FeeDoc = {
+  _id: Id<"fees">;
+  studentId: Id<"students">;
+  studentOrder: number;
+  studentName: string;
+  totalFee: number;
+  amountPaid: number;
+  amountDue: number;
+  lastPaymentOn: string | null;
+  nextDueOn: string | null;
+  note: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type StudentRow = {
+  student: StudentDoc;
+  fee?: FeeDoc;
+  doneSessions: number;
+  upcomingSessions: SessionDoc[];
+  progressPercent: number;
+  remainingSessions: number;
+  statusLabel: string;
+  statusTone: "green" | "amber";
+};
+
+const navItems: Array<{
+  key: ViewKey;
+  label: string;
+  hint: string;
+}> = [
+  { key: "dashboard", label: "Dashboard", hint: "Overview" },
+  { key: "students", label: "Students", hint: "Profiles" },
+  { key: "schedule", label: "Schedule", hint: "Calendar" },
+  { key: "session-log", label: "Session Log", hint: "Status" },
+  { key: "fees", label: "Fees Tracker", hint: "Payments" },
+  { key: "backup", label: "Data Backup", hint: "Safeguard" },
+];
+
+const fieldClass =
+  "flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground shadow-sm outline-none transition placeholder:text-slate-400 focus:border-orange-400/60 focus:ring-2 focus:ring-orange-400/20";
+
+export default function App() {
+  const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    startOfMonth(new Date()),
+  );
+
+  const students = useQuery(api.crm.listStudents) as StudentDoc[] | undefined;
+  const sessions = useQuery(api.crm.listSessions) as SessionDoc[] | undefined;
+  const fees = useQuery(api.crm.listFees) as FeeDoc[] | undefined;
+
+  const ensureSeedData = useMutation(api.crm.ensureSeedData);
+  const addStudent = useMutation(api.crm.addStudent);
+  const saveFeeAccount = useMutation(api.crm.saveFeeAccount);
+  const scheduleSession = useMutation(api.crm.scheduleSession);
+  const setSessionStatus = useMutation(api.crm.setSessionStatus);
+  const postponeSession = useMutation(api.crm.postponeSession);
+
+  const seededRef = useRef(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<
+    Id<"students"> | ""
+  >("");
+  const [selectedFeeStudentId, setSelectedFeeStudentId] = useState<
+    Id<"students"> | ""
+  >("");
+  const [selectedSessionId, setSelectedSessionId] = useState<
+    Id<"sessions"> | ""
+  >("");
+  const [addStudentOpen, setAddStudentOpen] = useState(false);
+  const [feeEditorOpen, setFeeEditorOpen] = useState(false);
+  const [postponeOpen, setPostponeOpen] = useState(false);
+
+  const [studentDraft, setStudentDraft] = useState({
+    name: "",
+    sessionGoal: "12",
+    amountPaid: String(totalCourseFee),
+    amountDue: "0",
+    lastPaymentOn: "",
+    nextDueOn: "",
+    note: "",
+  });
+
+  const [sessionDraft, setSessionDraft] = useState({
+    studentId: "",
+    date: localDateKey(Date.now()),
+    time: "19:00",
+    durationMinutes: "60",
+    note: "",
+  });
+
+  const [feeDraft, setFeeDraft] = useState({
+    amountPaid: "0",
+    amountDue: "0",
+    lastPaymentOn: "",
+    nextDueOn: "",
+    note: "",
+  });
+
+  const [postponeDraft, setPostponeDraft] = useState({
+    date: localDateKey(Date.now()),
+    time: "19:00",
+    durationMinutes: "60",
+    note: "",
+  });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (students && students.length === 0) {
+      seededRef.current = true;
+      ensureSeedData()
+        .then(() => setNotice("Seeded the CRM with the current student set."))
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : "Could not seed data.";
+          setErrorMessage(message);
+        });
+    }
+  }, [students, ensureSeedData]);
+
+  useEffect(() => {
+    if (students && students.length > 0 && !selectedStudentId) {
+      setSelectedStudentId(students[0]._id);
+      setSessionDraft((draft) => ({ ...draft, studentId: String(students[0]._id) }));
+    }
+  }, [students, selectedStudentId]);
+
+  useEffect(() => {
+    if (!sessionDraft.studentId && students && students.length > 0) {
+      setSessionDraft((draft) => ({ ...draft, studentId: String(students[0]._id) }));
+    }
+  }, [students, sessionDraft.studentId]);
+
+  useEffect(() => {
+    if (students && students.length > 0 && !selectedFeeStudentId) {
+      setSelectedFeeStudentId(students[0]._id);
+    }
+  }, [students, selectedFeeStudentId]);
+
+  const feesByStudentId = useMemo(() => {
+    return new Map((fees ?? []).map((fee) => [fee.studentId, fee]));
+  }, [fees]);
+
+  const sessionsByStudentId = useMemo(() => {
+    const map = new Map<Id<"students">, SessionDoc[]>();
+    for (const session of sessions ?? []) {
+      const existing = map.get(session.studentId) ?? [];
+      existing.push(session);
+      map.set(session.studentId, existing);
+    }
+    return map;
+  }, [sessions]);
+
+  const studentRows: StudentRow[] = useMemo(() => {
+    return (students ?? []).map((student) => {
+      const studentSessions = sessionsByStudentId.get(student._id) ?? [];
+      const fee = feesByStudentId.get(student._id);
+      const doneSessions = studentSessions.filter(
+        (session) => session.status === "done",
+      ).length;
+      const upcomingSessions = studentSessions
+        .filter((session) => session.status === "scheduled" && session.startAt >= clockTick)
+        .sort((left, right) => left.startAt - right.startAt);
+      const remainingSessions = Math.max(student.sessionGoal - doneSessions, 0);
+      const progressPercent =
+        student.sessionGoal === 0
+          ? 0
+          : Math.min((doneSessions / student.sessionGoal) * 100, 100);
+
+      return {
+        student,
+        fee,
+        doneSessions,
+        upcomingSessions,
+        remainingSessions,
+        progressPercent,
+        statusLabel: upcomingSessions.length > 0 ? "On track" : "No Slots Yet",
+        statusTone: upcomingSessions.length > 0 ? "green" : "amber",
+      };
+    });
+  }, [students, sessionsByStudentId, feesByStudentId, clockTick]);
+
+  const scheduledSessions = useMemo(() => {
+    return (sessions ?? [])
+      .filter((session) => session.status === "scheduled")
+      .sort((left, right) => left.startAt - right.startAt);
+  }, [sessions]);
+
+  const sessionsThisWeekDone = useMemo(() => {
+    const today = new Date(clockTick);
+    const dayOffset = (today.getDay() + 6) % 7;
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - dayOffset);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    return (sessions ?? []).filter((session) => {
+      return (
+        session.status === "done" &&
+        session.startAt >= start.getTime() &&
+        session.startAt < end.getTime()
+      );
+    }).length;
+  }, [sessions, clockTick]);
+
+  const conflicts = useMemo(() => {
+    let conflictCount = 0;
+    for (let i = 0; i < scheduledSessions.length; i += 1) {
+      for (let j = i + 1; j < scheduledSessions.length; j += 1) {
+        const left = scheduledSessions[i];
+        const right = scheduledSessions[j];
+        if (left.startAt < right.endAt && right.startAt < left.endAt) {
+          conflictCount += 1;
+        }
+      }
+    }
+    return conflictCount;
+  }, [scheduledSessions]);
+
+  const feesOutstanding = useMemo(() => {
+    return (fees ?? []).reduce((sum, fee) => sum + fee.amountDue, 0);
+  }, [fees]);
+
+  const dueStudents = useMemo(() => {
+    return (fees ?? [])
+      .filter((fee) => fee.amountDue > 0)
+      .sort((left, right) => {
+        const leftDue = left.nextDueOn ?? "9999-12-31";
+        const rightDue = right.nextDueOn ?? "9999-12-31";
+        return leftDue.localeCompare(rightDue);
+      });
+  }, [fees]);
+
+  const upcomingDueSoon = useMemo(() => {
+    const windowEnd = new Date(clockTick);
+    windowEnd.setDate(windowEnd.getDate() + 31);
+    return dueStudents.filter((fee) => {
+      if (!fee.nextDueOn) return false;
+      const dueDate = new Date(`${fee.nextDueOn}T12:00:00`);
+      return dueDate.getTime() <= windowEnd.getTime();
+    });
+  }, [dueStudents, clockTick]);
+
+  const totalStudents = students?.length ?? 0;
+  const activeStudents = useMemo(() => {
+    return (students ?? []).filter((student) => student.active).length;
+  }, [students]);
+  const introsDone = useMemo(() => {
+    return (students ?? []).filter((student) => student.introDone).length;
+  }, [students]);
+  const unscheduledStudents = useMemo(() => {
+    return studentRows.filter((row) => row.upcomingSessions.length === 0).length;
+  }, [studentRows]);
+
+  const monthGrid = useMemo(() => buildMonthGrid(calendarMonth), [calendarMonth]);
+  const sessionsByDate = useMemo(() => {
+    const map = new Map<string, SessionDoc[]>();
+    for (const session of scheduledSessions) {
+      const key = localDateKey(session.startAt);
+      const list = map.get(key) ?? [];
+      list.push(session);
+      map.set(key, list);
+    }
+    return map;
+  }, [scheduledSessions]);
+
+  const backupSnapshot = useMemo(() => {
+    return {
+      exportedAt: new Date(clockTick).toISOString(),
+      students: students ?? [],
+      sessions: sessions ?? [],
+      fees: fees ?? [],
+    };
+  }, [students, sessions, fees, clockTick]);
+
+  const selectedFee = useMemo(() => {
+    return (fees ?? []).find(
+      (fee) => String(fee.studentId) === String(selectedFeeStudentId),
+    );
+  }, [fees, selectedFeeStudentId]);
+
+  const selectedSession = useMemo(() => {
+    return (sessions ?? []).find(
+      (session) => String(session._id) === String(selectedSessionId),
+    );
+  }, [sessions, selectedSessionId]);
+
+  useEffect(() => {
+    if (selectedFee) {
+      setFeeDraft({
+        amountPaid: String(selectedFee.amountPaid),
+        amountDue: String(selectedFee.amountDue),
+        lastPaymentOn: selectedFee.lastPaymentOn ?? "",
+        nextDueOn: selectedFee.nextDueOn ?? "",
+        note: selectedFee.note ?? "",
+      });
+    }
+  }, [selectedFee]);
+
+  useEffect(() => {
+    if (selectedSession) {
+      setPostponeDraft({
+        date: toDateInputValue(selectedSession.startAt + 7 * 24 * 60 * 60 * 1000),
+        time: toTimeInputValue(selectedSession.startAt),
+        durationMinutes: String(selectedSession.durationMinutes),
+        note: selectedSession.note ?? "",
+      });
+    }
+  }, [selectedSession]);
+
+  const openAddStudent = () => {
+    setStudentDraft({
+      name: "",
+      sessionGoal: "12",
+      amountPaid: String(totalCourseFee),
+      amountDue: "0",
+      lastPaymentOn: "",
+      nextDueOn: "",
+      note: "",
+    });
+    setAddStudentOpen(true);
+  };
+
+  const openAddSession = (studentId?: Id<"students">) => {
+    const fallback = studentId ?? students?.[0]?._id;
+    if (fallback) {
+      setSessionDraft((draft) => ({
+        ...draft,
+        studentId: String(fallback),
+        date: localDateKey(Date.now()),
+        time: "19:00",
+        durationMinutes: "60",
+        note: "",
+      }));
+    }
+    setActiveView("schedule");
+  };
+
+  const openFeeEditor = (studentId: Id<"students">) => {
+    setSelectedFeeStudentId(studentId);
+    setFeeEditorOpen(true);
+  };
+
+  const openPostponeDialog = (sessionId: Id<"sessions">) => {
+    setSelectedSessionId(sessionId);
+    setPostponeOpen(true);
+  };
+
+  const showSuccess = (message: string) => {
+    setErrorMessage(null);
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 3500);
+  };
+
+  const showError = (message: string) => {
+    setNotice(null);
+    setErrorMessage(message);
+    window.setTimeout(() => setErrorMessage(null), 4500);
+  };
+
+  const handleAddStudent = async () => {
+    try {
+      const name = studentDraft.name.trim();
+      if (!name) {
+        throw new Error("Add a student name first.");
+      }
+
+      await addStudent({
+        name,
+        sessionGoal: Number(studentDraft.sessionGoal || 12),
+        amountPaid: Number(studentDraft.amountPaid || 0),
+        amountDue: Number(studentDraft.amountDue || 0),
+        lastPaymentOn: studentDraft.lastPaymentOn.trim() || null,
+        nextDueOn: studentDraft.nextDueOn.trim() || null,
+        note: studentDraft.note.trim() || null,
+      });
+      setAddStudentOpen(false);
+      showSuccess(`Added ${name} to the CRM.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not add student.";
+      showError(message);
+    }
+  };
+
+  const handleSaveFee = async () => {
+    if (!selectedFeeStudentId) return;
+    try {
+      const fee = selectedFee;
+      if (!fee) {
+        throw new Error("No fee record is selected.");
+      }
+      await saveFeeAccount({
+        studentId: selectedFeeStudentId,
+        amountPaid: Number(feeDraft.amountPaid || 0),
+        amountDue: Number(feeDraft.amountDue || 0),
+        lastPaymentOn: feeDraft.lastPaymentOn.trim() || null,
+        nextDueOn: feeDraft.nextDueOn.trim() || null,
+        note: feeDraft.note.trim() || null,
+      });
+      setFeeEditorOpen(false);
+      showSuccess(`Updated fee record for ${fee.studentName}.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not save fee record.";
+      showError(message);
+    }
+  };
+
+  const handleScheduleSession = async () => {
+    try {
+      if (!sessionDraft.studentId) {
+        throw new Error("Choose a student before scheduling.");
+      }
+      const startAt = parseLocalDateTime(sessionDraft.date, sessionDraft.time);
+      await scheduleSession({
+        studentId: sessionDraft.studentId as Id<"students">,
+        startAt,
+        durationMinutes: Number(sessionDraft.durationMinutes || 60),
+        note: sessionDraft.note.trim() || null,
+      });
+      showSuccess("Scheduled a session without any clashes.");
+      setSessionDraft((draft) => ({
+        ...draft,
+        date: localDateKey(Date.now()),
+        time: "19:00",
+        note: "",
+      }));
+      setActiveView("schedule");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not schedule session.";
+      showError(message);
+    }
+  };
+
+  const handleSessionStatus = async (
+    sessionId: Id<"sessions">,
+    status: "done" | "canceled" | "postponed",
+  ) => {
+    try {
+      if (status === "postponed") {
+        openPostponeDialog(sessionId);
+        return;
+      }
+      await setSessionStatus({
+        sessionId,
+        status,
+        note: status === "done" ? "Marked done from the session log." : "Marked canceled from the session log.",
+      });
+      showSuccess(`Session marked ${status}.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not update session.";
+      showError(message);
+    }
+  };
+
+  const handlePostponeSession = async () => {
+    if (!selectedSessionId) return;
+    try {
+      const startAt = parseLocalDateTime(postponeDraft.date, postponeDraft.time);
+      await postponeSession({
+        sessionId: selectedSessionId,
+        startAt,
+        durationMinutes: Number(postponeDraft.durationMinutes || 60),
+        note: postponeDraft.note.trim() || null,
+      });
+      setPostponeOpen(false);
+      showSuccess("Postponed the session and created the replacement slot.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not postpone session.";
+      showError(message);
+    }
+  };
+
+  const downloadBackup = () => {
+    const blob = new Blob([JSON.stringify(backupSnapshot, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `elevate-crm-backup-${new Date(clockTick)
+      .toISOString()
+      .slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showSuccess("Backup exported to a JSON file.");
+  };
+
+  const copyBackup = async () => {
+    await navigator.clipboard.writeText(JSON.stringify(backupSnapshot, null, 2));
+    showSuccess("Backup snapshot copied to clipboard.");
+  };
+
+  const currentViewTitle = navItems.find((item) => item.key === activeView)?.label ?? "Dashboard";
+
+  return (
+    <div className="flex min-h-screen text-foreground">
+      <aside className="hidden w-[290px] flex-col border-r border-white/10 bg-slate-950/75 px-5 py-6 backdrop-blur-xl xl:flex">
+        <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-4 shadow-2xl shadow-black/20">
+          <p className="text-xs uppercase tracking-[0.35em] text-orange-400/80">
+            Elevate Commerce
+          </p>
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-white">
+            1-1 Mentorship CRM
+          </h2>
+          <p className="mt-1 text-sm text-slate-300">
+            Secure student tracking with sessions, fees, and backups in one place.
+          </p>
+        </div>
+
+        <div className="mt-6 space-y-6">
+          <SidebarSection
+            title="Main"
+            items={navItems.slice(0, 2)}
+            activeView={activeView}
+            onChange={setActiveView}
+          />
+          <SidebarSection
+            title="Sessions"
+            items={navItems.slice(2, 4)}
+            activeView={activeView}
+            onChange={setActiveView}
+          />
+          <SidebarSection
+            title="Records"
+            items={navItems.slice(4)}
+            activeView={activeView}
+            onChange={setActiveView}
+          />
+        </div>
+
+        <div className="mt-auto rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+          <p className="font-medium">Data is live.</p>
+          <p className="mt-1 text-emerald-100/80">
+            Convex persists your changes. Export a backup anytime from the backup view.
+          </p>
+        </div>
+      </aside>
+
+      <main className="flex min-h-screen flex-1 flex-col">
+        <header className="border-b border-white/10 bg-slate-950/50 px-5 py-4 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-orange-400/80">
+                Elevate Commerce
+              </p>
+              <h1 className="text-3xl font-semibold tracking-tight">
+                {currentViewTitle}
+              </h1>
+              <p className="mt-1 text-sm text-slate-300">
+                {formatDateTime(clockTick)} · Convex-backed · isolated from your other projects
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-100">
+                Secure DB connected
+              </span>
+              <Button variant="outline" onClick={() => setActiveView("backup")}>
+                Backup
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setActiveView("schedule");
+                  openAddSession();
+                }}
+              >
+                + Add Session
+              </Button>
+              <Button onClick={openAddStudent}>+ Add Student</Button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 xl:hidden">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setActiveView(item.key)}
+                className={cn(
+                  "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.25em] transition",
+                  activeView === item.key
+                    ? "border-orange-400/40 bg-orange-400/15 text-orange-100"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <section className="flex-1 overflow-y-auto px-5 py-6">
+          {notice ? (
+            <AlertBar tone="success" message={notice} />
+          ) : null}
+          {errorMessage ? (
+            <AlertBar tone="error" message={errorMessage} />
+          ) : null}
+
+          {(!students || !sessions || !fees) ? (
+            <LoadingState />
+          ) : (
+            <>
+              {activeView === "dashboard" ? (
+                <DashboardView
+                  totalStudents={totalStudents}
+                  activeStudents={activeStudents}
+                  introsDone={introsDone}
+                  sessionsThisWeekDone={sessionsThisWeekDone}
+                  conflicts={conflicts}
+                  feesOutstanding={feesOutstanding}
+                  dueStudents={dueStudents}
+                  upcomingDueSoon={upcomingDueSoon}
+                  studentRows={studentRows}
+                  scheduledSessions={scheduledSessions}
+                  unscheduledStudents={unscheduledStudents}
+                  onJump={setActiveView}
+                  onAddSlot={openAddSession}
+                />
+              ) : null}
+
+              {activeView === "students" ? (
+                <StudentsView
+                  studentRows={studentRows}
+                  onAddSlot={openAddSession}
+                  onAddStudent={openAddStudent}
+                  onFocusStudent={(studentId) => {
+                    setSelectedStudentId(studentId);
+                    setActiveView("schedule");
+                  }}
+                />
+              ) : null}
+
+              {activeView === "schedule" ? (
+                <ScheduleView
+                  students={students}
+                  sessionDraft={sessionDraft}
+                  setSessionDraft={setSessionDraft}
+                  calendarMonth={calendarMonth}
+                  setCalendarMonth={setCalendarMonth}
+                  monthGrid={monthGrid}
+                  sessionsByDate={sessionsByDate}
+                  scheduledSessions={scheduledSessions}
+                  onAddSession={handleScheduleSession}
+                />
+              ) : null}
+
+              {activeView === "session-log" ? (
+                <SessionLogView
+                  sessions={sessions}
+                  studentRows={studentRows}
+                  onStatusChange={handleSessionStatus}
+                  onPostpone={openPostponeDialog}
+                />
+              ) : null}
+
+              {activeView === "fees" ? (
+                <FeesView
+                  fees={fees}
+                  studentRows={studentRows}
+                  onOpenEditor={openFeeEditor}
+                  onSaveFee={handleSaveFee}
+                  selectedFeeStudentId={selectedFeeStudentId}
+                  setSelectedFeeStudentId={setSelectedFeeStudentId}
+                  totalOutstanding={feesOutstanding}
+                />
+              ) : null}
+
+              {activeView === "backup" ? (
+                <BackupView
+                  backupSnapshot={backupSnapshot}
+                  onDownload={downloadBackup}
+                  onCopy={copyBackup}
+                  studentCount={totalStudents}
+                  sessionCount={sessions.length}
+                  feeCount={fees.length}
+                />
+              ) : null}
+            </>
+          )}
+        </section>
+      </main>
+
+      <Dialog open={addStudentOpen} onOpenChange={setAddStudentOpen}>
+        <DialogContent className="max-w-2xl border-white/10 bg-slate-950/95 text-foreground">
+          <DialogHeader>
+            <DialogTitle>Add student</DialogTitle>
+            <DialogDescription>
+              Add a new learner and seed their fee account in one step.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Student name">
+              <Input
+                className={fieldClass}
+                value={studentDraft.name}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({ ...draft, name: event.target.value }))
+                }
+                placeholder="Enter full name"
+              />
+            </Field>
+            <Field label="Session goal">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={1}
+                value={studentDraft.sessionGoal}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    sessionGoal: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Amount paid">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={0}
+                value={studentDraft.amountPaid}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    amountPaid: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Amount due">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={0}
+                value={studentDraft.amountDue}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    amountDue: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Payment date">
+              <Input
+                className={fieldClass}
+                type="date"
+                value={studentDraft.lastPaymentOn}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    lastPaymentOn: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Next due date">
+              <Input
+                className={fieldClass}
+                type="date"
+                value={studentDraft.nextDueOn}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    nextDueOn: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+          </div>
+          <Field label="Notes">
+            <textarea
+              className={cn(fieldClass, "min-h-24 pt-2")}
+              value={studentDraft.note}
+              onChange={(event) =>
+                setStudentDraft((draft) => ({ ...draft, note: event.target.value }))
+              }
+              placeholder="Optional note for this student"
+            />
+          </Field>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAddStudentOpen(false)}
+              type="button"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAddStudent} type="button">
+              Save student
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={feeEditorOpen} onOpenChange={setFeeEditorOpen}>
+        <DialogContent className="max-w-xl border-white/10 bg-slate-950/95 text-foreground">
+          <DialogHeader>
+            <DialogTitle>
+              Update fee record
+            </DialogTitle>
+            <DialogDescription>
+              Keep the current payment snapshot and reminder dates accurate.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Amount paid">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={0}
+                value={feeDraft.amountPaid}
+                onChange={(event) =>
+                  setFeeDraft((draft) => ({ ...draft, amountPaid: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Amount due">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={0}
+                value={feeDraft.amountDue}
+                onChange={(event) =>
+                  setFeeDraft((draft) => ({ ...draft, amountDue: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Last payment date">
+              <Input
+                className={fieldClass}
+                type="date"
+                value={feeDraft.lastPaymentOn}
+                onChange={(event) =>
+                  setFeeDraft((draft) => ({
+                    ...draft,
+                    lastPaymentOn: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Next due date">
+              <Input
+                className={fieldClass}
+                type="date"
+                value={feeDraft.nextDueOn}
+                onChange={(event) =>
+                  setFeeDraft((draft) => ({ ...draft, nextDueOn: event.target.value }))
+                }
+              />
+            </Field>
+          </div>
+          <Field label="Notes">
+            <textarea
+              className={cn(fieldClass, "min-h-24 pt-2")}
+              value={feeDraft.note}
+              onChange={(event) =>
+                setFeeDraft((draft) => ({ ...draft, note: event.target.value }))
+              }
+              placeholder="Optional reminder or payment note"
+            />
+          </Field>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setFeeEditorOpen(false)}
+              type="button"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveFee} type="button">
+              Save record
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={postponeOpen} onOpenChange={setPostponeOpen}>
+        <DialogContent className="max-w-xl border-white/10 bg-slate-950/95 text-foreground">
+          <DialogHeader>
+            <DialogTitle>Postpone session</DialogTitle>
+            <DialogDescription>
+              Mark the original slot as postponed and create the replacement slot.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="New date">
+              <Input
+                className={fieldClass}
+                type="date"
+                value={postponeDraft.date}
+                onChange={(event) =>
+                  setPostponeDraft((draft) => ({ ...draft, date: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="New time">
+              <Input
+                className={fieldClass}
+                type="time"
+                value={postponeDraft.time}
+                onChange={(event) =>
+                  setPostponeDraft((draft) => ({ ...draft, time: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Duration">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={15}
+                step={15}
+                value={postponeDraft.durationMinutes}
+                onChange={(event) =>
+                  setPostponeDraft((draft) => ({
+                    ...draft,
+                    durationMinutes: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+          </div>
+
+          <Field label="Notes">
+            <textarea
+              className={cn(fieldClass, "min-h-24 pt-2")}
+              value={postponeDraft.note}
+              onChange={(event) =>
+                setPostponeDraft((draft) => ({ ...draft, note: event.target.value }))
+              }
+              placeholder="Why was this session postponed?"
+            />
+          </Field>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPostponeOpen(false)}
+              type="button"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handlePostponeSession} type="button">
+              Postpone and reschedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function SidebarSection({
+  title,
+  items,
+  activeView,
+  onChange,
+}: {
+  title: string;
+  items: Array<{ key: ViewKey; label: string; hint: string }>;
+  activeView: ViewKey;
+  onChange: (value: ViewKey) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-3 text-xs uppercase tracking-[0.35em] text-slate-500">
+        {title}
+      </p>
+      <div className="space-y-1">
+        {items.map((item) => (
+          <button
+            key={item.key}
+            onClick={() => onChange(item.key)}
+            className={cn(
+              "flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left transition",
+              activeView === item.key
+                ? "bg-white/10 text-white shadow-lg shadow-black/20 ring-1 ring-orange-400/20"
+                : "text-slate-300 hover:bg-white/5 hover:text-white",
+            )}
+          >
+            <div>
+              <div className="text-sm font-medium">{item.label}</div>
+              <div className="text-xs text-slate-500">{item.hint}</div>
+            </div>
+            <span
+              className={cn(
+                "h-2.5 w-2.5 rounded-full",
+                activeView === item.key ? "bg-orange-400" : "bg-slate-600",
+              )}
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AlertBar({
+  tone,
+  message,
+}: {
+  tone: "success" | "error";
+  message: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "mb-6 rounded-2xl border px-4 py-3 text-sm shadow-lg",
+        tone === "success"
+          ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-100"
+          : "border-red-400/20 bg-red-500/10 text-red-100",
+      )}
+    >
+      {message}
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <Card className="border-white/10 bg-white/5">
+      <CardHeader>
+        <CardTitle>Syncing CRM data</CardTitle>
+        <CardDescription>
+          Waiting for the secure Convex database to finish loading.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="text-sm text-slate-300">
+        The first seed will run automatically if this database is empty.
+      </CardContent>
+    </Card>
+  );
+}
+
+function DashboardView({
+  totalStudents,
+  activeStudents,
+  introsDone,
+  sessionsThisWeekDone,
+  conflicts,
+  feesOutstanding,
+  unscheduledStudents,
+  dueStudents,
+  upcomingDueSoon,
+  studentRows,
+  scheduledSessions,
+  onJump,
+  onAddSlot,
+}: {
+  totalStudents: number;
+  activeStudents: number;
+  introsDone: number;
+  sessionsThisWeekDone: number;
+  conflicts: number;
+  feesOutstanding: number;
+  unscheduledStudents: number;
+  dueStudents: FeeDoc[];
+  upcomingDueSoon: FeeDoc[];
+  studentRows: StudentRow[];
+  scheduledSessions: SessionDoc[];
+  onJump: (view: ViewKey) => void;
+  onAddSlot: (studentId?: Id<"students">) => void;
+}) {
+  const metrics = [
+    {
+      label: "Active Students",
+      value: activeStudents,
+      detail: "live student records",
+      accent: "orange",
+    },
+    {
+      label: "Intros Done",
+      value: `${introsDone}/${totalStudents}`,
+      detail: "onboarding complete",
+      accent: "emerald",
+    },
+    {
+      label: "Sessions This Week",
+      value: sessionsThisWeekDone,
+      detail: "marked done",
+      accent: "blue",
+    },
+    {
+      label: "Clashes",
+      value: conflicts,
+      detail: "time overlaps",
+      accent: "rose",
+    },
+      {
+        label: "Fees Outstanding",
+        value: formatCurrency(feesOutstanding),
+        detail: `${dueStudents.length} students owe fees`,
+        accent: "amber",
+      },
+      {
+        label: "No Slots",
+        value: unscheduledStudents,
+        detail: "students unscheduled",
+        accent: "slate",
+      },
+      {
+        label: "Total Students",
+        value: totalStudents,
+        detail: "all time",
+        accent: "slate",
+      },
+  ] as const;
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-7">
+        {metrics.map((metric) => (
+          <MetricCard key={metric.label} {...metric} />
+        ))}
+      </section>
+
+      <Card className="border-orange-400/20 bg-gradient-to-r from-orange-400/10 via-white/5 to-white/5">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className="text-sm text-orange-100">
+            <span className="font-semibold">{formatCurrency(feesOutstanding)}</span>{" "}
+            outstanding from {dueStudents.length} students.
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => onJump("fees")}>
+              View fees
+            </Button>
+            <Button variant="outline" onClick={() => onJump("schedule")}>
+              Open calendar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {upcomingDueSoon.length > 0 ? (
+        <Card className="border-amber-400/20 bg-amber-500/10">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            <div className="space-y-1">
+              <div className="text-sm font-semibold text-amber-100">
+                Upcoming payment reminders
+              </div>
+              <div className="text-sm text-amber-100/80">
+                {upcomingDueSoon
+                  .map(
+                    (fee) =>
+                      `${fee.studentName} due ${formatDateOnly(fee.nextDueOn)} (${formatCurrency(
+                        fee.amountDue,
+                      )})`,
+                  )
+                  .join(" · ")}
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => onJump("fees")}>
+              Review reminders
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <section className="grid gap-6 2xl:grid-cols-[1.5fr_1fr]">
+        <Card className="border-white/10 bg-white/5">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>Student Overview</CardTitle>
+              <CardDescription>Numbered cards, payment totals, and next actions.</CardDescription>
+            </div>
+            <Button variant="outline" onClick={() => onJump("students")}>
+              Open students
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              {studentRows.map((row) => (
+                <StudentCompactCard
+                  key={String(row.student._id)}
+                  row={row}
+                  onAddSlot={onAddSlot}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card className="border-white/10 bg-white/5">
+            <CardHeader>
+              <CardTitle>Schedule at a glance</CardTitle>
+              <CardDescription>Upcoming sessions ordered by date and time.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {scheduledSessions.slice(0, 6).map((session) => (
+                <div
+                  key={String(session._id)}
+                  className="rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-white">{session.studentName}</div>
+                      <div className="text-sm text-slate-300">
+                        {formatDateTime(session.startAt)}
+                      </div>
+                    </div>
+                    <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-100">
+                      Scheduled
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {scheduledSessions.length === 0 ? (
+                <p className="text-sm text-slate-300">No sessions have been scheduled yet.</p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function StudentsView({
+  studentRows,
+  onAddSlot,
+  onAddStudent,
+  onFocusStudent,
+}: {
+  studentRows: StudentRow[];
+  onAddSlot: (studentId?: Id<"students">) => void;
+  onAddStudent: () => void;
+  onFocusStudent: (studentId: Id<"students">) => void;
+}) {
+  return (
+    <Card className="border-white/10 bg-white/5">
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>Students</CardTitle>
+          <CardDescription>
+            Every student is numbered in the order they were added.
+          </CardDescription>
+        </div>
+        <Button onClick={onAddStudent} variant="outline">
+          + Add Student
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {studentRows.map((row) => (
+            <StudentFullCard
+              key={String(row.student._id)}
+              row={row}
+              onAddSlot={onAddSlot}
+              onFocusStudent={onFocusStudent}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScheduleView({
+  students,
+  sessionDraft,
+  setSessionDraft,
+  calendarMonth,
+  setCalendarMonth,
+  monthGrid,
+  sessionsByDate,
+  scheduledSessions,
+  onAddSession,
+}: {
+  students: StudentDoc[];
+  sessionDraft: {
+    studentId: string;
+    date: string;
+    time: string;
+    durationMinutes: string;
+    note: string;
+  };
+  setSessionDraft: Dispatch<
+    SetStateAction<{
+      studentId: string;
+      date: string;
+      time: string;
+      durationMinutes: string;
+      note: string;
+    }>
+  >;
+  calendarMonth: Date;
+  setCalendarMonth: Dispatch<SetStateAction<Date>>;
+  monthGrid: Date[];
+  sessionsByDate: Map<string, SessionDoc[]>;
+  scheduledSessions: SessionDoc[];
+  onAddSession: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Calendar</CardTitle>
+            <CardDescription>
+              Schedule exact dates and keep sessions clear of each other.
+            </CardDescription>
+          </div>
+          <Button onClick={onAddSession}>+ Add Session</Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
+            <div className="rounded-3xl border border-white/10 bg-slate-950/35 p-4">
+              <div className="grid gap-3">
+                <Field label="Student">
+                  <select
+                    className={fieldClass}
+                    value={sessionDraft.studentId}
+                    onChange={(event) =>
+                      setSessionDraft((draft) => ({
+                        ...draft,
+                        studentId: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">-- Select student --</option>
+                    {students.map((student) => (
+                      <option key={String(student._id)} value={String(student._id)}>
+                        {student.order.toString().padStart(2, "0")} · {student.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Exact date">
+                  <Input
+                    className={fieldClass}
+                    type="date"
+                    value={sessionDraft.date}
+                    onChange={(event) =>
+                      setSessionDraft((draft) => ({ ...draft, date: event.target.value }))
+                    }
+                  />
+                </Field>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Time">
+                    <Input
+                      className={fieldClass}
+                      type="time"
+                      value={sessionDraft.time}
+                      onChange={(event) =>
+                        setSessionDraft((draft) => ({
+                          ...draft,
+                          time: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="Length">
+                    <select
+                      className={fieldClass}
+                      value={sessionDraft.durationMinutes}
+                      onChange={(event) =>
+                        setSessionDraft((draft) => ({
+                          ...draft,
+                          durationMinutes: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="45">45 min</option>
+                      <option value="60">60 min</option>
+                      <option value="90">90 min</option>
+                      <option value="120">120 min</option>
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Notes">
+                  <textarea
+                    className={cn(fieldClass, "min-h-24 pt-2")}
+                    value={sessionDraft.note}
+                    onChange={(event) =>
+                      setSessionDraft((draft) => ({ ...draft, note: event.target.value }))
+                    }
+                    placeholder="Optional session note"
+                  />
+                </Field>
+                <Button onClick={onAddSession}>Add Session</Button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-slate-950/35 p-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setCalendarMonth(addMonths(calendarMonth, -1))}
+                >
+                  Previous
+                </Button>
+                <h3 className="text-lg font-semibold">{formatMonthYear(calendarMonth)}</h3>
+                <Button variant="outline" onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))}>
+                  Next
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+                {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+                  <div
+                    key={day}
+                    className="bg-slate-950/60 px-2 py-3 text-center text-xs font-semibold uppercase tracking-[0.3em] text-slate-400"
+                  >
+                    {day}
+                  </div>
+                ))}
+                {monthGrid.map((day) => {
+                  const key = localDateKey(day.getTime());
+                  const daySessions = sessionsByDate.get(key) ?? [];
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={cn(
+                        "min-h-32 bg-slate-950/35 p-2 text-sm",
+                        isSameMonth(day, calendarMonth) ? "text-slate-100" : "text-slate-500",
+                        day.getDate() === new Date().getDate() &&
+                          day.getMonth() === new Date().getMonth() &&
+                          day.getFullYear() === new Date().getFullYear()
+                          ? "ring-2 ring-orange-400/50"
+                          : "",
+                      )}
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold tracking-wide">
+                          {day.getDate()}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {daySessions.slice(0, 2).map((session) => (
+                          <div
+                            key={String(session._id)}
+                            className="rounded-lg border border-orange-400/20 bg-orange-400/10 px-2 py-1 text-xs text-orange-100"
+                          >
+                            {formatDateTime(session.startAt).split(", ").slice(1).join(" ")}{" "}
+                            {session.studentName}
+                          </div>
+                        ))}
+                        {daySessions.length > 2 ? (
+                          <div className="text-xs text-slate-400">
+                            +{daySessions.length - 2} more
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader>
+          <CardTitle>Upcoming sessions</CardTitle>
+          <CardDescription>
+            The calendar above shows the active booked slots.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {scheduledSessions.map((session) => (
+            <div
+              key={String(session._id)}
+              className="rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-3"
+            >
+              <div className="text-sm font-semibold text-white">{session.studentName}</div>
+              <div className="mt-1 text-sm text-slate-300">{formatDateTime(session.startAt)}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {session.durationMinutes} minutes
+              </div>
+            </div>
+          ))}
+          {scheduledSessions.length === 0 ? (
+            <p className="text-sm text-slate-300">No upcoming sessions booked yet.</p>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SessionLogView({
+  sessions,
+  studentRows,
+  onStatusChange,
+  onPostpone,
+}: {
+  sessions: SessionDoc[];
+  studentRows: StudentRow[];
+  onStatusChange: (
+    sessionId: Id<"sessions">,
+    status: "done" | "canceled" | "postponed",
+  ) => Promise<void>;
+  onPostpone: (sessionId: Id<"sessions">) => void;
+}) {
+  return (
+    <Card className="border-white/10 bg-white/5">
+      <CardHeader>
+        <CardTitle>Session log</CardTitle>
+        <CardDescription>
+          Mark each scheduled session as done, canceled, or postponed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {sessions
+          .slice()
+          .sort((left, right) => right.startAt - left.startAt)
+          .map((session) => {
+            const row = studentRows.find(
+              (studentRow) => studentRow.student._id === session.studentId,
+            );
+            return (
+              <div
+                key={String(session._id)}
+                className="rounded-2xl border border-white/10 bg-slate-950/35 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                        #{row?.student.order.toString().padStart(2, "0") ?? "--"}
+                      </span>
+                      <h3 className="text-lg font-semibold text-white">
+                        {session.studentName}
+                      </h3>
+                      <StatusTag status={session.status} />
+                    </div>
+                    <p className="mt-2 text-sm text-slate-300">
+                      {formatDateTime(session.startAt)} · {session.durationMinutes} minutes
+                    </p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {session.note ?? "No extra note added yet."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {session.status === "scheduled" ? (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => onStatusChange(session._id, "done")}
+                        >
+                          Done
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onPostpone(session._id)}
+                        >
+                          Postpone
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onStatusChange(session._id, "canceled")}
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-400">
+                        Archived status
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        {sessions.length === 0 ? (
+          <p className="text-sm text-slate-300">No session history yet.</p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FeesView({
+  fees,
+  studentRows,
+  onOpenEditor,
+  onSaveFee,
+  selectedFeeStudentId,
+  setSelectedFeeStudentId,
+  totalOutstanding,
+}: {
+  fees: FeeDoc[];
+  studentRows: StudentRow[];
+  onOpenEditor: (studentId: Id<"students">) => void;
+  onSaveFee: () => Promise<void>;
+  selectedFeeStudentId: Id<"students"> | "";
+  setSelectedFeeStudentId: Dispatch<
+    SetStateAction<Id<"students"> | "">
+  >;
+  totalOutstanding: number;
+}) {
+  const dueStudentsCount = fees.filter((fee) => fee.amountDue > 0).length;
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-4">
+        <MetricCard
+          label="Outstanding"
+          value={formatCurrency(totalOutstanding)}
+          detail="current fees due"
+          accent="amber"
+        />
+        <MetricCard
+          label="Due students"
+          value={dueStudentsCount}
+          detail="need reminders"
+          accent="orange"
+        />
+        <MetricCard
+          label="Fully paid"
+          value={fees.filter((fee) => fee.amountDue === 0).length}
+          detail="settled accounts"
+          accent="emerald"
+        />
+        <MetricCard
+          label="Total fee"
+          value={formatCurrency(totalCourseFee)}
+          detail="per student"
+          accent="slate"
+        />
+      </section>
+
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Fee tracker</CardTitle>
+            <CardDescription>
+              Track installment dates, amounts paid, and next due reminders.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const first = studentRows.find((row) => row.fee);
+              if (first) onOpenEditor(first.student._id);
+            }}
+          >
+            Edit record
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3">
+            <select
+              className={fieldClass}
+              value={selectedFeeStudentId}
+              onChange={(event) =>
+                setSelectedFeeStudentId(event.target.value as Id<"students">)
+              }
+            >
+              <option value="">-- Select student record --</option>
+              {studentRows.map((row) => (
+                <option key={String(row.student._id)} value={String(row.student._id)}>
+                  {row.student.order.toString().padStart(2, "0")} - {row.student.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedFeeStudentId ? (
+            <div className="rounded-3xl border border-white/10 bg-slate-950/35 p-4">
+              {(() => {
+                const row = studentRows.find(
+                  (studentRow) => studentRow.student._id === selectedFeeStudentId,
+                );
+                if (!row) return null;
+                return (
+                  <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-xl font-semibold text-white">
+                          {row.student.name}
+                        </h3>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300">
+                          #{row.student.order.toString().padStart(2, "0")}
+                        </span>
+                        <StatusTag
+                          status={row.fee?.amountDue ? "scheduled" : "done"}
+                        />
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-300">
+                        <span>Paid: {formatCurrency(row.fee?.amountPaid ?? 0)}</span>
+                        <span>Due: {formatCurrency(row.fee?.amountDue ?? totalCourseFee)}</span>
+                        <span>
+                          Last payment: {formatDateOnly(row.fee?.lastPaymentOn ?? null)}
+                        </span>
+                        <span>
+                          Next due: {formatDateOnly(row.fee?.nextDueOn ?? null)}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-400">
+                        {row.fee?.note ?? row.student.note}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Button variant="outline" onClick={() => onOpenEditor(row.student._id)}>
+                        Edit account
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-3xl border border-white/10">
+            <div className="grid grid-cols-12 bg-slate-950/60 px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+              <div className="col-span-4">Student</div>
+              <div className="col-span-2">Paid</div>
+              <div className="col-span-2">Due</div>
+              <div className="col-span-2">Last payment</div>
+              <div className="col-span-2">Next due</div>
+            </div>
+            <div className="divide-y divide-white/10">
+              {fees.map((fee) => (
+                <div
+                  key={String(fee._id)}
+                  className={cn(
+                    "grid grid-cols-12 items-center px-4 py-4 text-sm",
+                    fee.amountDue > 0 ? "bg-amber-500/5" : "bg-transparent",
+                  )}
+                >
+                  <div className="col-span-4">
+                    <div className="font-medium text-white">{fee.studentName}</div>
+                    <div className="text-xs text-slate-400">
+                      #{fee.studentOrder.toString().padStart(2, "0")}
+                    </div>
+                  </div>
+                  <div className="col-span-2 text-emerald-300">
+                    {formatCurrency(fee.amountPaid)}
+                  </div>
+                  <div className="col-span-2 text-amber-300">
+                    {formatCurrency(fee.amountDue)}
+                  </div>
+                  <div className="col-span-2 text-slate-300">
+                    {formatDateOnly(fee.lastPaymentOn)}
+                  </div>
+                  <div className="col-span-2 text-slate-300">
+                    {formatDateOnly(fee.nextDueOn)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader>
+          <CardTitle>Quick notes</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-slate-300">
+          Waleed Iftikhar has a logged payment of 200 on 29 May 2026 with the next
+          installment due on 29 Jun 2026. Arslan is set to 200 paid and 200 due with
+          the next installment due in July; the payment date can be filled in later.
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={() => {
+            const first = studentRows.find((row) => row.fee);
+            if (first) onOpenEditor(first.student._id);
+          }}
+        >
+          Edit selected record
+        </Button>
+        <Button variant="outline" onClick={onSaveFee}>
+          Save current edit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function BackupView({
+  backupSnapshot,
+  onDownload,
+  onCopy,
+  studentCount,
+  sessionCount,
+  feeCount,
+}: {
+  backupSnapshot: {
+    exportedAt: string;
+    students: StudentDoc[];
+    sessions: SessionDoc[];
+    fees: FeeDoc[];
+  };
+  onDownload: () => void;
+  onCopy: () => void;
+  studentCount: number;
+  sessionCount: number;
+  feeCount: number;
+}) {
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-3">
+        <MetricCard label="Students" value={studentCount} detail="backed up" accent="orange" />
+        <MetricCard label="Sessions" value={sessionCount} detail="backed up" accent="emerald" />
+        <MetricCard label="Fee records" value={feeCount} detail="backed up" accent="blue" />
+      </section>
+
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Data backup</CardTitle>
+            <CardDescription>
+              Export the live Convex data as JSON for local safekeeping or handoff.
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onCopy}>
+              Copy JSON
+            </Button>
+            <Button onClick={onDownload}>Download backup</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <pre className="max-h-[34rem] overflow-auto rounded-3xl border border-white/10 bg-slate-950/50 p-4 text-xs leading-6 text-slate-200">
+            {JSON.stringify(backupSnapshot, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  accent,
+}: {
+  label: string;
+  value: number | string;
+  detail: string;
+  accent: "orange" | "emerald" | "blue" | "rose" | "amber" | "slate";
+}) {
+  const accentClass = {
+    orange: "text-orange-300",
+    emerald: "text-emerald-300",
+    blue: "text-sky-300",
+    rose: "text-rose-300",
+    amber: "text-amber-300",
+    slate: "text-slate-300",
+  }[accent];
+
+  return (
+    <Card className="relative overflow-hidden border-white/10 bg-white/5">
+      <div className="absolute right-0 top-0 h-16 w-16 rounded-bl-full bg-white/5" />
+      <CardHeader className="pb-3">
+        <CardDescription className="uppercase tracking-[0.25em] text-slate-400">
+          {label}
+        </CardDescription>
+        <CardTitle className={cn("text-3xl font-black tracking-tight", accentClass)}>
+          {value}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0 text-sm text-slate-400">{detail}</CardContent>
+    </Card>
+  );
+}
+
+function StudentCompactCard({
+  row,
+  onAddSlot,
+}: {
+  row: StudentRow;
+  onAddSlot: (studentId?: Id<"students">) => void;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/35 p-4 shadow-xl shadow-black/20">
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-lg font-black text-orange-300">
+          {row.student.initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+              #{row.student.order.toString().padStart(2, "0")}
+            </span>
+            <StatusTag status={row.statusTone === "green" ? "done" : "scheduled"} />
+          </div>
+          <h3 className="mt-2 truncate text-base font-semibold text-white">
+            {row.student.name}
+          </h3>
+          <div className="mt-2 text-sm text-slate-300">
+            {row.upcomingSessions[0]
+              ? formatDateTime(row.upcomingSessions[0].startAt)
+              : "No sessions booked"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+        <StatChip label="Done" value={row.doneSessions} />
+        <StatChip label="Left" value={row.remainingSessions} />
+        <StatChip
+          label="Paid"
+          value={formatCurrency(row.fee?.amountPaid ?? 0)}
+        />
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-orange-400 via-amber-300 to-emerald-300"
+          style={{ width: `${row.progressPercent}%` }}
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => onAddSlot(row.student._id)}>
+          Add Slot
+        </Button>
+        <Button variant="outline" size="sm">
+          WA Group
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StudentFullCard({
+  row,
+  onAddSlot,
+  onFocusStudent,
+}: {
+  row: StudentRow;
+  onAddSlot: (studentId?: Id<"students">) => void;
+  onFocusStudent: (studentId: Id<"students">) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-[1.75rem] border p-4 shadow-xl shadow-black/20",
+        row.statusTone === "green"
+          ? "border-emerald-400/30 bg-gradient-to-b from-emerald-500/10 to-slate-950/35"
+          : "border-amber-400/30 bg-gradient-to-b from-amber-500/10 to-slate-950/35",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-lg font-black text-orange-300">
+          {row.student.initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+              #{row.student.order.toString().padStart(2, "0")}
+            </span>
+            <StatusTag status={row.statusTone === "green" ? "done" : "scheduled"} />
+            <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
+              Active
+            </span>
+          </div>
+          <h3 className="mt-2 truncate text-lg font-semibold text-white">
+            {row.student.name}
+          </h3>
+          <div className="mt-2 text-sm text-slate-300">
+            {row.upcomingSessions[0]
+              ? formatDateTime(row.upcomingSessions[0].startAt)
+              : "No sessions booked"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+        <StatChip label="Done" value={row.doneSessions} />
+        <StatChip label="Left" value={row.remainingSessions} />
+        <StatChip label="Paid" value={formatCurrency(row.fee?.amountPaid ?? 0)} />
+      </div>
+
+      {row.fee?.amountDue ? (
+        <div className="mt-3 text-sm text-amber-300">
+          {formatCurrency(row.fee.amountDue)} due {formatDateOnly(row.fee.nextDueOn)}
+        </div>
+      ) : (
+        <div className="mt-3 text-sm text-emerald-300">Fully paid</div>
+      )}
+
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-orange-400 via-amber-300 to-emerald-300"
+          style={{ width: `${row.progressPercent}%` }}
+        />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => onAddSlot(row.student._id)}>
+          Add Slot
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => onFocusStudent(row.student._id)}>
+          View
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StatusTag({
+  status,
+}: {
+  status: "done" | "scheduled" | "canceled" | "postponed";
+}) {
+  const styles: Record<
+    "done" | "scheduled" | "canceled" | "postponed",
+    string
+  > = {
+    done: "border-emerald-400/20 bg-emerald-500/10 text-emerald-100",
+    scheduled: "border-orange-400/20 bg-orange-500/10 text-orange-100",
+    canceled: "border-rose-400/20 bg-rose-500/10 text-rose-100",
+    postponed: "border-amber-400/20 bg-amber-500/10 text-amber-100",
+  };
+
+  return (
+    <span
+      className={cn(
+        "rounded-full border px-2.5 py-1 text-xs font-medium capitalize",
+        styles[status],
+      )}
+    >
+      {status.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+function StatChip({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+      <div className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-white">{value}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="space-y-1.5">
+      <span className="text-xs uppercase tracking-[0.3em] text-slate-400">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function toDateInputValue(timestamp: number) {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeInputValue(timestamp: number) {
+  const date = new Date(timestamp);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
