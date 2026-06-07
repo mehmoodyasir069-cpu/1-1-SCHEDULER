@@ -16,6 +16,35 @@ function computeInitials(name: string) {
   return letters.slice(0, 2) || name.slice(0, 2).toUpperCase();
 }
 
+function normalizeText(value: string | null | undefined) {
+  return value?.trim() ?? "";
+}
+
+function normalizeOptionalText(value: string | null | undefined) {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeProfileFields(args: {
+  currentState?: string;
+  goals?: string;
+  investmentBudget?: string;
+  futurePlans?: string;
+  experienceLevel?: string;
+  problemsWeaknesses?: string;
+  importantReminders?: string;
+}) {
+  return {
+    currentState: normalizeText(args.currentState),
+    goals: normalizeText(args.goals),
+    investmentBudget: normalizeText(args.investmentBudget),
+    futurePlans: normalizeText(args.futurePlans),
+    experienceLevel: normalizeText(args.experienceLevel),
+    problemsWeaknesses: normalizeText(args.problemsWeaknesses),
+    importantReminders: normalizeText(args.importantReminders),
+  };
+}
+
 async function getStudentMap(ctx: any): Promise<Map<string, any>> {
   const students: any[] = await ctx.db
     .query("students")
@@ -68,6 +97,14 @@ export const ensureSeedData = mutation({
           sessionGoal: seed.sessionGoal,
           note: seed.note,
           createdAt: Date.now(),
+          currentState: "",
+          goals: "",
+          investmentBudget: "",
+          futurePlans: "",
+          experienceLevel: "",
+          problemsWeaknesses: "",
+          importantReminders: "",
+          updatedAt: Date.now(),
         });
         studentMap.set(seed.name, {
           _id: studentId,
@@ -79,6 +116,14 @@ export const ensureSeedData = mutation({
           sessionGoal: seed.sessionGoal,
           note: seed.note,
           createdAt: Date.now(),
+          currentState: "",
+          goals: "",
+          investmentBudget: "",
+          futurePlans: "",
+          experienceLevel: "",
+          problemsWeaknesses: "",
+          importantReminders: "",
+          updatedAt: Date.now(),
         });
       }
     }
@@ -153,6 +198,23 @@ export const listSessions = query({
   },
 });
 
+export const listStudentNotes = query({
+  args: {},
+  handler: async (ctx) => {
+    const notes = await ctx.db
+      .query("studentNotes")
+      .withIndex("by_createdAt")
+      .collect();
+
+    return notes.sort((left, right) => {
+      if (right.createdAt !== left.createdAt) {
+        return right.createdAt - left.createdAt;
+      }
+      return right.updatedAt - left.updatedAt;
+    });
+  },
+});
+
 export const listFees = query({
   args: {},
   handler: async (ctx) => {
@@ -169,6 +231,13 @@ export const addStudent = mutation({
     lastPaymentOn: v.union(v.string(), v.null()),
     nextDueOn: v.union(v.string(), v.null()),
     note: v.union(v.string(), v.null()),
+    currentState: v.optional(v.string()),
+    goals: v.optional(v.string()),
+    investmentBudget: v.optional(v.string()),
+    futurePlans: v.optional(v.string()),
+    experienceLevel: v.optional(v.string()),
+    problemsWeaknesses: v.optional(v.string()),
+    importantReminders: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const students = await ctx.db.query("students").withIndex("by_order").collect();
@@ -188,6 +257,14 @@ export const addStudent = mutation({
       note:
         args.note ?? "New student added from the CRM forms.",
       createdAt: now,
+      currentState: normalizeText(args.currentState),
+      goals: normalizeText(args.goals),
+      investmentBudget: normalizeText(args.investmentBudget),
+      futurePlans: normalizeText(args.futurePlans),
+      experienceLevel: normalizeText(args.experienceLevel),
+      problemsWeaknesses: normalizeText(args.problemsWeaknesses),
+      importantReminders: normalizeText(args.importantReminders),
+      updatedAt: now,
     });
 
     await ctx.db.insert("fees", {
@@ -205,6 +282,67 @@ export const addStudent = mutation({
     });
 
     return studentId;
+  },
+});
+
+export const saveStudentProfile = mutation({
+  args: {
+    studentId: v.id("students"),
+    name: v.string(),
+    currentState: v.string(),
+    goals: v.string(),
+    investmentBudget: v.string(),
+    futurePlans: v.string(),
+    experienceLevel: v.string(),
+    problemsWeaknesses: v.string(),
+    importantReminders: v.string(),
+    note: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const student = await ctx.db.get(args.studentId);
+    if (!student) {
+      throw new Error("Student not found.");
+    }
+
+    const name = args.name.trim();
+    if (!name) {
+      throw new Error("Student name is required.");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.studentId, {
+      name,
+      initials: computeInitials(name),
+      note: args.note,
+      updatedAt: now,
+      ...normalizeProfileFields(args),
+    });
+
+    if (student.name !== name) {
+      const relatedFees = await ctx.db
+        .query("fees")
+        .withIndex("by_studentId", (q) => q.eq("studentId", args.studentId))
+        .collect();
+      for (const fee of relatedFees) {
+        await ctx.db.patch(fee._id, {
+          studentName: name,
+          updatedAt: now,
+        });
+      }
+
+      const relatedSessions = await ctx.db
+        .query("sessions")
+        .withIndex("by_studentId", (q) => q.eq("studentId", args.studentId))
+        .collect();
+      for (const session of relatedSessions) {
+        await ctx.db.patch(session._id, {
+          studentName: name,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return args.studentId;
   },
 });
 
@@ -281,6 +419,117 @@ export const scheduleSession = mutation({
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+export const addStudentNote = mutation({
+  args: {
+    studentId: v.id("students"),
+    sessionId: v.union(v.id("sessions"), v.null()),
+    type: v.union(v.literal("general"), v.literal("session")),
+    title: v.union(v.string(), v.null()),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const student = await ctx.db.get(args.studentId);
+    if (!student) {
+      throw new Error("Student not found.");
+    }
+
+    if (args.type === "session") {
+      if (!args.sessionId) {
+        throw new Error("Session notes need a linked session.");
+      }
+      const session = await ctx.db.get(args.sessionId);
+      if (!session) {
+        throw new Error("Session not found.");
+      }
+      if (String(session.studentId) !== String(args.studentId)) {
+        throw new Error("That session does not belong to this student.");
+      }
+    }
+
+    const content = args.content.trim();
+    if (!content) {
+      throw new Error("Add some note content first.");
+    }
+
+    const now = Date.now();
+    return await ctx.db.insert("studentNotes", {
+      studentId: student._id,
+      sessionId: args.sessionId ?? undefined,
+      type: args.type,
+      title: normalizeOptionalText(args.title),
+      content,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const updateStudentNote = mutation({
+  args: {
+    noteId: v.id("studentNotes"),
+    studentId: v.id("students"),
+    sessionId: v.union(v.id("sessions"), v.null()),
+    type: v.union(v.literal("general"), v.literal("session")),
+    title: v.union(v.string(), v.null()),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const note = await ctx.db.get(args.noteId);
+    if (!note) {
+      throw new Error("Note not found.");
+    }
+
+    const student = await ctx.db.get(args.studentId);
+    if (!student) {
+      throw new Error("Student not found.");
+    }
+
+    if (args.type === "session") {
+      if (!args.sessionId) {
+        throw new Error("Session notes need a linked session.");
+      }
+      const session = await ctx.db.get(args.sessionId);
+      if (!session) {
+        throw new Error("Session not found.");
+      }
+      if (String(session.studentId) !== String(args.studentId)) {
+        throw new Error("That session does not belong to this student.");
+      }
+    }
+
+    const content = args.content.trim();
+    if (!content) {
+      throw new Error("Add some note content first.");
+    }
+
+    await ctx.db.patch(args.noteId, {
+      studentId: student._id,
+      sessionId: args.sessionId ?? undefined,
+      type: args.type,
+      title: normalizeOptionalText(args.title),
+      content,
+      updatedAt: Date.now(),
+    });
+
+    return args.noteId;
+  },
+});
+
+export const deleteStudentNote = mutation({
+  args: {
+    noteId: v.id("studentNotes"),
+  },
+  handler: async (ctx, args) => {
+    const note = await ctx.db.get(args.noteId);
+    if (!note) {
+      throw new Error("Note not found.");
+    }
+
+    await ctx.db.delete(args.noteId);
+    return args.noteId;
   },
 });
 

@@ -11,6 +11,14 @@ export default defineSchema({
     sessionGoal: v.number(),
     note: v.string(),
     createdAt: v.number(),
+    currentState: v.optional(v.string()),
+    goals: v.optional(v.string()),
+    investmentBudget: v.optional(v.string()),
+    futurePlans: v.optional(v.string()),
+    experienceLevel: v.optional(v.string()),
+    problemsWeaknesses: v.optional(v.string()),
+    importantReminders: v.optional(v.string()),
+    updatedAt: v.optional(v.number()),
   }).index("by_order", ["order"]),
 
   sessions: defineTable({
@@ -32,6 +40,18 @@ export default defineSchema({
     .index("by_startAt", ["startAt"])
     .index("by_studentId", ["studentId"])
     .index("by_status", ["status"]),
+
+  studentNotes: defineTable({
+    studentId: v.id("students"),
+    sessionId: v.optional(v.id("sessions")),
+    type: v.union(v.literal("general"), v.literal("session")),
+    title: v.union(v.string(), v.null()),
+    content: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_studentId", ["studentId"])
+    .index("by_createdAt", ["createdAt"]),
 
   fees: defineTable({
     studentId: v.id("students"),

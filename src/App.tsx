@@ -60,6 +60,14 @@ type StudentDoc = {
   sessionGoal: number;
   note: string;
   createdAt: number;
+  currentState?: string;
+  goals?: string;
+  investmentBudget?: string;
+  futurePlans?: string;
+  experienceLevel?: string;
+  problemsWeaknesses?: string;
+  importantReminders?: string;
+  updatedAt?: number;
 };
 
 type SessionDoc = {
@@ -71,6 +79,17 @@ type SessionDoc = {
   durationMinutes: number;
   status: "scheduled" | "done" | "postponed" | "canceled";
   note: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type StudentNoteDoc = {
+  _id: Id<"studentNotes">;
+  studentId: Id<"students">;
+  sessionId?: Id<"sessions">;
+  type: "general" | "session";
+  title: string | null;
+  content: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -103,10 +122,39 @@ type StudentRow = {
   fee?: FeeDoc;
   doneSessions: number;
   upcomingSessions: SessionDoc[];
+  noteCount: number;
+  generalNoteCount: number;
+  sessionNoteCount: number;
   progressPercent: number;
   remainingSessions: number;
   statusLabel: string;
   statusTone: "green" | "amber";
+};
+
+type StudentProfileDraft = {
+  name: string;
+  currentState: string;
+  goals: string;
+  investmentBudget: string;
+  futurePlans: string;
+  experienceLevel: string;
+  problemsWeaknesses: string;
+  importantReminders: string;
+  note: string;
+};
+
+type StudentNoteDraft = {
+  noteId: Id<"studentNotes"> | "";
+  studentId: Id<"students"> | "";
+  sessionId: Id<"sessions"> | "";
+  type: "general" | "session";
+  title: string;
+  content: string;
+};
+
+type SessionCompletionDraft = {
+  title: string;
+  content: string;
 };
 
 const navItems: Array<{
@@ -150,16 +198,23 @@ export default function App() {
 
   const students = useQuery(api.crm.listStudents) as StudentDoc[] | undefined;
   const sessions = useQuery(api.crm.listSessions) as SessionDoc[] | undefined;
+  const studentNotes = useQuery(api.crm.listStudentNotes) as
+    | StudentNoteDoc[]
+    | undefined;
   const fees = useQuery(api.crm.listFees) as FeeDoc[] | undefined;
 
   const ensureSeedData = useMutation(api.crm.ensureSeedData);
   const addStudent = useMutation(api.crm.addStudent);
+  const saveStudentProfile = useMutation(api.crm.saveStudentProfile);
   const saveFeeAccount = useMutation(api.crm.saveFeeAccount);
   const scheduleSession = useMutation(api.crm.scheduleSession);
   const updateSession = useMutation(api.crm.updateSession);
   const deleteSession = useMutation(api.crm.deleteSession);
   const setSessionStatus = useMutation(api.crm.setSessionStatus);
   const postponeSession = useMutation(api.crm.postponeSession);
+  const addStudentNote = useMutation(api.crm.addStudentNote);
+  const updateStudentNote = useMutation(api.crm.updateStudentNote);
+  const deleteStudentNote = useMutation(api.crm.deleteStudentNote);
 
   const seededRef = useRef(false);
   const [selectedStudentId, setSelectedStudentId] = useState<
@@ -172,6 +227,37 @@ export default function App() {
     Id<"sessions"> | ""
   >("");
   const [editingSessionId, setEditingSessionId] = useState<Id<"sessions"> | "">("");
+  const [studentProfileOpen, setStudentProfileOpen] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<StudentProfileDraft>({
+    name: "",
+    currentState: "",
+    goals: "",
+    investmentBudget: "",
+    futurePlans: "",
+    experienceLevel: "",
+    problemsWeaknesses: "",
+    importantReminders: "",
+    note: "",
+  });
+  const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+  const [noteEditorSubmitting, setNoteEditorSubmitting] = useState(false);
+  const [noteEditorDraft, setNoteEditorDraft] = useState<StudentNoteDraft>({
+    noteId: "",
+    studentId: "",
+    sessionId: "",
+    type: "general",
+    title: "",
+    content: "",
+  });
+  const [sessionCompletionOpen, setSessionCompletionOpen] = useState(false);
+  const [sessionCompletionSubmitting, setSessionCompletionSubmitting] =
+    useState(false);
+  const [sessionCompletionDraft, setSessionCompletionDraft] =
+    useState<SessionCompletionDraft>({
+      title: "",
+      content: "",
+    });
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [feeEditorOpen, setFeeEditorOpen] = useState(false);
   const [editSessionOpen, setEditSessionOpen] = useState(false);
@@ -257,9 +343,45 @@ export default function App() {
     return map;
   }, [sessions]);
 
+  const sessionsById = useMemo(() => {
+    return new Map((sessions ?? []).map((session) => [session._id, session]));
+  }, [sessions]);
+
+  const notesByStudentId = useMemo(() => {
+    const map = new Map<Id<"students">, StudentNoteDoc[]>();
+    for (const note of studentNotes ?? []) {
+      const existing = map.get(note.studentId) ?? [];
+      existing.push(note);
+      map.set(note.studentId, existing);
+    }
+
+    for (const [studentId, notes] of map.entries()) {
+      notes.sort((left, right) => {
+        if (right.createdAt !== left.createdAt) {
+          return right.createdAt - left.createdAt;
+        }
+        return right.updatedAt - left.updatedAt;
+      });
+      map.set(studentId, notes);
+    }
+
+    return map;
+  }, [studentNotes]);
+
+  const studentById = useMemo(() => {
+    return new Map((students ?? []).map((student) => [student._id, student]));
+  }, [students]);
+
   const studentRows: StudentRow[] = useMemo(() => {
     return (students ?? []).map((student) => {
       const studentSessions = sessionsByStudentId.get(student._id) ?? [];
+      const studentNotesForRow = notesByStudentId.get(student._id) ?? [];
+      const generalNoteCount = studentNotesForRow.filter(
+        (note) => note.type === "general",
+      ).length;
+      const sessionNoteCount = studentNotesForRow.filter(
+        (note) => note.type === "session",
+      ).length;
       const fee = feesByStudentId.get(student._id);
       const doneSessions = studentSessions.filter(
         (session) => session.status === "done",
@@ -280,11 +402,14 @@ export default function App() {
         upcomingSessions,
         remainingSessions,
         progressPercent,
+        noteCount: studentNotesForRow.length,
+        generalNoteCount,
+        sessionNoteCount,
         statusLabel: upcomingSessions.length > 0 ? "On track" : "No Slots Yet",
         statusTone: upcomingSessions.length > 0 ? "green" : "amber",
       };
     });
-  }, [students, sessionsByStudentId, feesByStudentId, clockTick]);
+  }, [students, sessionsByStudentId, feesByStudentId, notesByStudentId, clockTick]);
 
   const scheduledSessions = useMemo(() => {
     return (sessions ?? [])
@@ -375,9 +500,10 @@ export default function App() {
       exportedAt: new Date(clockTick).toISOString(),
       students: students ?? [],
       sessions: sessions ?? [],
+      studentNotes: studentNotes ?? [],
       fees: fees ?? [],
     };
-  }, [students, sessions, fees, clockTick]);
+  }, [students, sessions, studentNotes, fees, clockTick]);
 
   const selectedFee = useMemo(() => {
     return (fees ?? []).find(
@@ -390,6 +516,10 @@ export default function App() {
       (session) => String(session._id) === String(selectedSessionId),
     );
   }, [sessions, selectedSessionId]);
+
+  const selectedStudent = useMemo(() => {
+    return studentById.get(selectedStudentId as Id<"students">);
+  }, [studentById, selectedStudentId]);
 
   useEffect(() => {
     if (selectedFee) {
@@ -414,6 +544,39 @@ export default function App() {
       });
     }
   }, [selectedSession]);
+
+  useEffect(() => {
+    if (!selectedStudent) return;
+    setProfileDraft({
+      name: selectedStudent.name,
+      currentState: selectedStudent.currentState ?? "",
+      goals: selectedStudent.goals ?? "",
+      investmentBudget: selectedStudent.investmentBudget ?? "",
+      futurePlans: selectedStudent.futurePlans ?? "",
+      experienceLevel: selectedStudent.experienceLevel ?? "",
+      problemsWeaknesses: selectedStudent.problemsWeaknesses ?? "",
+      importantReminders: selectedStudent.importantReminders ?? "",
+      note: selectedStudent.note ?? "",
+    });
+  }, [selectedStudent]);
+
+  useEffect(() => {
+    if (!studentProfileOpen) {
+      setProfileEditing(false);
+    }
+  }, [studentProfileOpen]);
+
+  useEffect(() => {
+    if (!noteEditorOpen) {
+      return;
+    }
+    if (!noteEditorDraft.studentId && selectedStudentId) {
+      setNoteEditorDraft((draft) => ({
+        ...draft,
+        studentId: selectedStudentId,
+      }));
+    }
+  }, [noteEditorOpen, noteEditorDraft.studentId, selectedStudentId]);
 
   const openAddStudent = () => {
     setStudentDraft({
@@ -470,6 +633,84 @@ export default function App() {
     setPostponeOpen(true);
   };
 
+  const openStudentProfile = (studentId: Id<"students">) => {
+    setSelectedStudentId(studentId);
+    setStudentProfileOpen(true);
+  };
+
+  const closeStudentProfile = () => {
+    setStudentProfileOpen(false);
+    setProfileEditing(false);
+    setNoteEditorOpen(false);
+    setNoteEditorSubmitting(false);
+  };
+
+  const openAddGeneralNote = (studentId: Id<"students">) => {
+    setNoteEditorDraft({
+      noteId: "",
+      studentId,
+      sessionId: "",
+      type: "general",
+      title: "",
+      content: "",
+    });
+    setNoteEditorOpen(true);
+  };
+
+  const openAddSessionNote = (
+    studentId: Id<"students">,
+    sessionId?: Id<"sessions">,
+  ) => {
+    const studentSessions = sessionsByStudentId.get(studentId) ?? [];
+    const fallbackSessionId =
+      sessionId ??
+      studentSessions.slice().sort((left, right) => right.startAt - left.startAt)[0]?._id ??
+      "";
+    setNoteEditorDraft({
+      noteId: "",
+      studentId,
+      sessionId: fallbackSessionId,
+      type: "session",
+      title: "",
+      content: "",
+    });
+    setNoteEditorOpen(true);
+  };
+
+  const openEditStudentNote = (note: StudentNoteDoc) => {
+    setNoteEditorDraft({
+      noteId: note._id,
+      studentId: note.studentId,
+      sessionId: note.sessionId ?? "",
+      type: note.type,
+      title: note.title ?? "",
+      content: note.content,
+    });
+    setNoteEditorOpen(true);
+  };
+
+  const closeNoteEditor = () => {
+    setNoteEditorOpen(false);
+    setNoteEditorSubmitting(false);
+  };
+
+  const openSessionCompletionDialog = (sessionId: Id<"sessions">) => {
+    const session = sessionsById.get(sessionId);
+    if (!session) return;
+
+    setSelectedSessionId(sessionId);
+    setSessionCompletionDraft({
+      title: `Session note for ${session.studentName}`,
+      content: "",
+    });
+    setSessionCompletionOpen(true);
+  };
+
+  const closeSessionCompletionDialog = () => {
+    setSessionCompletionOpen(false);
+    setSessionCompletionSubmitting(false);
+  };
+
   const showSuccess = (message: string) => {
     setErrorMessage(null);
     setNotice(message);
@@ -480,6 +721,136 @@ export default function App() {
     setNotice(null);
     setErrorMessage(message);
     window.setTimeout(() => setErrorMessage(null), 4500);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!selectedStudent) return;
+    try {
+      const name = profileDraft.name.trim();
+      if (!name) {
+        throw new Error("Student name is required.");
+      }
+
+      await saveStudentProfile({
+        studentId: selectedStudent._id,
+        name,
+        currentState: profileDraft.currentState.trim(),
+        goals: profileDraft.goals.trim(),
+        investmentBudget: profileDraft.investmentBudget.trim(),
+        futurePlans: profileDraft.futurePlans.trim(),
+        experienceLevel: profileDraft.experienceLevel.trim(),
+        problemsWeaknesses: profileDraft.problemsWeaknesses.trim(),
+        importantReminders: profileDraft.importantReminders.trim(),
+        note: profileDraft.note.trim(),
+      });
+      setProfileEditing(false);
+      showSuccess(`Saved profile for ${name}.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not save profile.";
+      showError(message);
+    }
+  };
+
+  const handleSaveStudentNote = async () => {
+    if (!noteEditorDraft.studentId) {
+      showError("Choose a student before saving the note.");
+      return;
+    }
+    if (noteEditorDraft.type === "session" && !noteEditorDraft.sessionId) {
+      showError("Choose a session before saving a session note.");
+      return;
+    }
+
+    try {
+      setNoteEditorSubmitting(true);
+      const payload = {
+        studentId: noteEditorDraft.studentId as Id<"students">,
+        sessionId: noteEditorDraft.sessionId
+          ? (noteEditorDraft.sessionId as Id<"sessions">)
+          : null,
+        type: noteEditorDraft.type,
+        title: noteEditorDraft.title.trim() || null,
+        content: noteEditorDraft.content.trim(),
+      };
+
+      if (noteEditorDraft.noteId) {
+        await updateStudentNote({
+          noteId: noteEditorDraft.noteId,
+          ...payload,
+        });
+        showSuccess("Note updated.");
+      } else {
+        await addStudentNote(payload);
+        showSuccess("Note saved.");
+      }
+
+      closeNoteEditor();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not save note.";
+      showError(message);
+      setNoteEditorSubmitting(false);
+    }
+  };
+
+  const handleDeleteStudentNote = async (noteId: Id<"studentNotes">) => {
+    try {
+      const confirmed = window.confirm("Delete this note?");
+      if (!confirmed) return;
+      await deleteStudentNote({ noteId });
+      if (String(noteEditorDraft.noteId) === String(noteId)) {
+        closeNoteEditor();
+      }
+      showSuccess("Note deleted.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not delete note.";
+      showError(message);
+    }
+  };
+
+  const handleSaveSessionCompletion = async () => {
+    if (!selectedSessionId) return;
+    const session = sessionsById.get(selectedSessionId as Id<"sessions">);
+    if (!session) {
+      showError("Session not found.");
+      return;
+    }
+
+    try {
+      setSessionCompletionSubmitting(true);
+      const preview =
+        sessionCompletionDraft.content.trim() ||
+        sessionCompletionDraft.title.trim() ||
+        "Marked done from the session log.";
+
+      await setSessionStatus({
+        sessionId: session._id,
+        status: "done",
+        note: preview,
+      });
+
+      const content = sessionCompletionDraft.content.trim();
+      const title = sessionCompletionDraft.title.trim();
+      if (content || title) {
+        await addStudentNote({
+          studentId: session.studentId,
+          sessionId: session._id,
+          type: "session",
+          title: title || null,
+          content: content || title,
+        });
+      }
+
+      closeSessionCompletionDialog();
+      showSuccess("Session marked done and note saved.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not finish session.";
+      showError(message);
+      setSessionCompletionSubmitting(false);
+    }
   };
 
   const handleAddStudent = async () => {
@@ -598,7 +969,11 @@ export default function App() {
       }
       if (String(selectedSessionId) === String(sessionId)) {
         setPostponeOpen(false);
+        setSessionCompletionOpen(false);
         setSelectedSessionId("");
+      }
+      if (String(noteEditorDraft.sessionId) === String(sessionId)) {
+        closeNoteEditor();
       }
 
       showSuccess("Session removed from the calendar.");
@@ -618,10 +993,14 @@ export default function App() {
         openPostponeDialog(sessionId);
         return;
       }
+      if (status === "done") {
+        openSessionCompletionDialog(sessionId);
+        return;
+      }
       await setSessionStatus({
         sessionId,
         status,
-        note: status === "done" ? "Marked done from the session log." : "Marked canceled from the session log.",
+        note: "Marked canceled from the session log.",
       });
       showSuccess(`Session marked ${status}.`);
     } catch (error) {
@@ -805,8 +1184,7 @@ export default function App() {
                   onAddSlot={openAddSession}
                   onAddStudent={openAddStudent}
                   onFocusStudent={(studentId) => {
-                    setSelectedStudentId(studentId);
-                    setActiveView("schedule");
+                    openStudentProfile(studentId);
                   }}
                 />
               ) : null}
@@ -1259,6 +1637,52 @@ export default function App() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <StudentProfileDialog
+        open={studentProfileOpen}
+        onOpenChange={(open) => {
+          setStudentProfileOpen(open);
+          if (!open) {
+            closeStudentProfile();
+          }
+        }}
+        student={selectedStudent}
+        fee={selectedStudent ? feesByStudentId.get(selectedStudent._id) : undefined}
+        sessions={selectedStudent ? sessionsByStudentId.get(selectedStudent._id) ?? [] : []}
+        notes={selectedStudent ? notesByStudentId.get(selectedStudent._id) ?? [] : []}
+        profileDraft={profileDraft}
+        setProfileDraft={setProfileDraft}
+        profileEditing={profileEditing}
+        setProfileEditing={setProfileEditing}
+        onSaveProfile={handleSaveProfile}
+        onAddSlot={openAddSession}
+        onEditSession={openEditSession}
+        onOpenGeneralNote={openAddGeneralNote}
+        onOpenSessionNote={openAddSessionNote}
+        onEditNote={openEditStudentNote}
+        noteEditorOpen={noteEditorOpen}
+        noteEditorDraft={noteEditorDraft}
+        setNoteEditorDraft={setNoteEditorDraft}
+        noteEditorSubmitting={noteEditorSubmitting}
+        onSaveNote={handleSaveStudentNote}
+        onDeleteNote={handleDeleteStudentNote}
+        onCloseNoteEditor={closeNoteEditor}
+      />
+
+      <SessionCompletionDialog
+        open={sessionCompletionOpen}
+        onOpenChange={(open) => {
+          setSessionCompletionOpen(open);
+          if (!open) {
+            closeSessionCompletionDialog();
+          }
+        }}
+        session={selectedSession ?? sessionsById.get(selectedSessionId as Id<"sessions">)}
+        draft={sessionCompletionDraft}
+        setDraft={setSessionCompletionDraft}
+        onSave={handleSaveSessionCompletion}
+        submitting={sessionCompletionSubmitting}
+      />
     </div>
   );
 }
@@ -2151,6 +2575,7 @@ function BackupView({
     exportedAt: string;
     students: StudentDoc[];
     sessions: SessionDoc[];
+    studentNotes: StudentNoteDoc[];
     fees: FeeDoc[];
   };
   onDownload: () => void;
@@ -2189,6 +2614,678 @@ function BackupView({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function StudentProfileDialog({
+  open,
+  onOpenChange,
+  student,
+  fee,
+  sessions,
+  notes,
+  profileDraft,
+  setProfileDraft,
+  profileEditing,
+  setProfileEditing,
+  onSaveProfile,
+  onAddSlot,
+  onEditSession,
+  onOpenGeneralNote,
+  onOpenSessionNote,
+  onEditNote,
+  noteEditorOpen,
+  noteEditorDraft,
+  setNoteEditorDraft,
+  noteEditorSubmitting,
+  onSaveNote,
+  onDeleteNote,
+  onCloseNoteEditor,
+}: {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+  student?: StudentDoc;
+  fee?: FeeDoc;
+  sessions: SessionDoc[];
+  notes: StudentNoteDoc[];
+  profileDraft: StudentProfileDraft;
+  setProfileDraft: Dispatch<SetStateAction<StudentProfileDraft>>;
+  profileEditing: boolean;
+  setProfileEditing: Dispatch<SetStateAction<boolean>>;
+  onSaveProfile: () => void;
+  onAddSlot: (studentId?: Id<"students">) => void;
+  onEditSession: (session: SessionDoc) => void;
+  onOpenGeneralNote: (studentId: Id<"students">) => void;
+  onOpenSessionNote: (studentId: Id<"students">, sessionId?: Id<"sessions">) => void;
+  onEditNote: (note: StudentNoteDoc) => void;
+  noteEditorOpen: boolean;
+  noteEditorDraft: StudentNoteDraft;
+  setNoteEditorDraft: Dispatch<SetStateAction<StudentNoteDraft>>;
+  noteEditorSubmitting: boolean;
+  onSaveNote: () => void;
+  onDeleteNote: (noteId: Id<"studentNotes">) => void;
+  onCloseNoteEditor: () => void;
+}) {
+  const sessionById = useMemo(() => {
+    return new Map(sessions.map((session) => [session._id, session]));
+  }, [sessions]);
+
+  const generalNotes = useMemo(
+    () => notes.filter((note) => note.type === "general"),
+    [notes],
+  );
+  const sessionNotes = useMemo(
+    () => notes.filter((note) => note.type === "session"),
+    [notes],
+  );
+  const orderedSessions = useMemo(() => {
+    return sessions.slice().sort((left, right) => right.startAt - left.startAt);
+  }, [sessions]);
+  const upcomingSession = useMemo(() => {
+    return sessions
+      .filter((session) => session.status === "scheduled")
+      .sort((left, right) => left.startAt - right.startAt)[0];
+  }, [sessions]);
+
+  if (!student) {
+    return null;
+  }
+
+  const doneSessions = sessions.filter((session) => session.status === "done").length;
+  const remainingSessions = Math.max(student.sessionGoal - doneSessions, 0);
+  const paymentBadge =
+    fee?.amountDue && fee.amountDue > 0
+      ? `${formatCurrency(fee.amountDue)} due`
+      : "Fully paid";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-7xl overflow-hidden border-white/10 bg-slate-950/95 p-0 text-foreground">
+        <div className="max-h-[92vh] overflow-y-auto p-6">
+          <DialogHeader className="mb-5 pr-10">
+            <DialogTitle className="text-2xl">
+              {student.order.toString().padStart(2, "0")} · {student.name}
+            </DialogTitle>
+            <DialogDescription>
+              Full profile, session history, and all student notes in one place.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-6 xl:grid-cols-[1.05fr_1.35fr]">
+            <div className="space-y-6">
+              <Card className="border-white/10 bg-white/5">
+                <CardHeader className="space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-2xl font-black text-orange-300">
+                        {student.initials}
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <CardTitle className="text-2xl">{student.name}</CardTitle>
+                          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                            #{student.order.toString().padStart(2, "0")}
+                          </span>
+                          <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-100">
+                            {paymentBadge}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+                          <span className="rounded-full bg-white/5 px-2.5 py-1">
+                            {doneSessions} done
+                          </span>
+                          <span className="rounded-full bg-white/5 px-2.5 py-1">
+                            {remainingSessions} left
+                          </span>
+                          <span className="rounded-full bg-white/5 px-2.5 py-1">
+                            {notes.length} notes
+                          </span>
+                          <span className="rounded-full bg-white/5 px-2.5 py-1">
+                            {sessions.length} sessions
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button variant="outline" onClick={() => setProfileEditing(true)}>
+                        Edit Profile
+                      </Button>
+                      <Button variant="outline" onClick={() => onAddSlot(student._id)}>
+                        Add Slot
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+                      <div className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                        Next booked session
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-white">
+                        {upcomingSession
+                          ? formatDateTime(upcomingSession.startAt)
+                          : "No upcoming session"}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-300">
+                        {upcomingSession
+                          ? `${upcomingSession.durationMinutes} minutes`
+                          : "Use Add Slot to book one"}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+                      <div className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                        Profile summary
+                      </div>
+                      <div className="mt-2 text-sm text-slate-300">
+                        {student.note || "No summary note added yet."}
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Student full name">
+                      <Input
+                        className={fieldClass}
+                        value={profileDraft.name}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({ ...draft, name: event.target.value }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="Investment budget">
+                      <Input
+                        className={fieldClass}
+                        value={profileDraft.investmentBudget}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            investmentBudget: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="Current state / current situation">
+                      <textarea
+                        className={cn(fieldClass, "min-h-24 pt-2")}
+                        value={profileDraft.currentState}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            currentState: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="Goals">
+                      <textarea
+                        className={cn(fieldClass, "min-h-24 pt-2")}
+                        value={profileDraft.goals}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            goals: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="Future plans">
+                      <textarea
+                        className={cn(fieldClass, "min-h-24 pt-2")}
+                        value={profileDraft.futurePlans}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            futurePlans: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="eBay / business experience">
+                      <Input
+                        className={fieldClass}
+                        value={profileDraft.experienceLevel}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            experienceLevel: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="Main problems / weaknesses">
+                      <textarea
+                        className={cn(fieldClass, "min-h-24 pt-2")}
+                        value={profileDraft.problemsWeaknesses}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            problemsWeaknesses: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="Important reminders">
+                      <textarea
+                        className={cn(fieldClass, "min-h-24 pt-2")}
+                        value={profileDraft.importantReminders}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            importantReminders: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                    <Field label="General notes">
+                      <textarea
+                        className={cn(fieldClass, "min-h-24 pt-2")}
+                        value={profileDraft.note}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            note: event.target.value,
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      />
+                    </Field>
+                  </div>
+
+                  {profileEditing ? (
+                    <div className="flex justify-between gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setProfileEditing(false);
+                          setProfileDraft({
+                            name: student.name,
+                            currentState: student.currentState ?? "",
+                            goals: student.goals ?? "",
+                            investmentBudget: student.investmentBudget ?? "",
+                            futurePlans: student.futurePlans ?? "",
+                            experienceLevel: student.experienceLevel ?? "",
+                            problemsWeaknesses: student.problemsWeaknesses ?? "",
+                            importantReminders: student.importantReminders ?? "",
+                            note: student.note ?? "",
+                          });
+                        }}
+                      >
+                        Cancel Edit
+                      </Button>
+                      <Button onClick={onSaveProfile}>Save Profile</Button>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="border-white/10 bg-white/5">
+                <CardHeader className="flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle>Past and upcoming sessions</CardTitle>
+                    <CardDescription>
+                      Everything booked for this student, newest first.
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => onAddSlot(student._id)}>
+                    Add Slot
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {orderedSessions.length === 0 ? (
+                    <p className="text-sm text-slate-300">No sessions booked yet.</p>
+                  ) : (
+                    orderedSessions.map((session) => {
+                      const sessionNoteCount = notes.filter(
+                        (note) =>
+                          note.type === "session" &&
+                          note.sessionId &&
+                          String(note.sessionId) === String(session._id),
+                      ).length;
+                      return (
+                        <div
+                          key={String(session._id)}
+                          className="rounded-2xl border border-white/10 bg-slate-950/35 p-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <StatusTag status={session.status} />
+                                <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                                  {formatDateTime(session.startAt)}
+                                </span>
+                                <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                                  {session.durationMinutes} min
+                                </span>
+                                {sessionNoteCount > 0 ? (
+                                  <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-200">
+                                    {sessionNoteCount} note{sessionNoteCount === 1 ? "" : "s"}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="mt-2 text-sm text-slate-300">
+                                {session.note ?? "No session note yet."}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onEditSession(session)}
+                              >
+                                Edit session
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onOpenSessionNote(student._id, session._id)}
+                              >
+                                Add note
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="space-y-6">
+              <Card className="border-white/10 bg-white/5">
+                <CardHeader className="flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle>General notes</CardTitle>
+                    <CardDescription>
+                      Long-term notes for the student profile, newest first.
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => onOpenGeneralNote(student._id)}
+                    >
+                      Add General Note
+                    </Button>
+                    <Button
+                      onClick={() => onOpenSessionNote(student._id)}
+                      disabled={sessions.length === 0}
+                    >
+                      Add Session Note
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {noteEditorOpen ? (
+                    <div className="rounded-3xl border border-orange-400/20 bg-orange-500/5 p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-white">
+                            {noteEditorDraft.noteId ? "Edit note" : "Add note"}
+                          </div>
+                          <div className="text-sm text-slate-300">
+                            {noteEditorDraft.type === "session"
+                              ? "This note is linked to a booked session."
+                              : "This note stays on the student profile."}
+                          </div>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={onCloseNoteEditor}>
+                          Cancel
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Note title">
+                          <Input
+                            className={fieldClass}
+                            value={noteEditorDraft.title}
+                            onChange={(event) =>
+                              setNoteEditorDraft((draft) => ({
+                                ...draft,
+                                title: event.target.value,
+                              }))
+                            }
+                            placeholder="Optional note title"
+                          />
+                        </Field>
+                        {noteEditorDraft.type === "session" ? (
+                          <Field label="Linked session">
+                            <select
+                              className={selectFieldClass}
+                              style={darkControlStyle}
+                              value={noteEditorDraft.sessionId}
+                              onChange={(event) =>
+                                setNoteEditorDraft((draft) => ({
+                                  ...draft,
+                                  sessionId: event.target.value
+                                    ? (event.target.value as Id<"sessions">)
+                                    : "",
+                                }))
+                              }
+                            >
+                              <option value="">-- Select session --</option>
+                              {sessions.map((session) => (
+                                <option key={String(session._id)} value={String(session._id)}>
+                                  {formatDateTime(session.startAt)} · {session.status}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                        ) : null}
+                      </div>
+
+                      <Field label="Note content">
+                        <textarea
+                          className={cn(fieldClass, "min-h-32 pt-2")}
+                          value={noteEditorDraft.content}
+                          onChange={(event) =>
+                            setNoteEditorDraft((draft) => ({
+                              ...draft,
+                              content: event.target.value,
+                            }))
+                          }
+                          placeholder="Write the full note here."
+                        />
+                      </Field>
+
+                      <div className="mt-4 flex flex-wrap justify-between gap-2">
+                        <div className="text-xs text-slate-400">
+                          {noteEditorDraft.type === "session"
+                            ? "Session notes can be linked to a booked lesson."
+                            : "General notes are for long-term context and reminders."}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" onClick={onCloseNoteEditor}>
+                            Cancel
+                          </Button>
+                          <Button onClick={onSaveNote} disabled={noteEditorSubmitting}>
+                            {noteEditorDraft.noteId ? "Save changes" : "Save note"}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {generalNotes.length === 0 ? (
+                    <p className="text-sm text-slate-300">No general notes added yet.</p>
+                  ) : (
+                    generalNotes.map((note) => (
+                      <StudentNoteCard
+                        key={String(note._id)}
+                        note={note}
+                        session={note.sessionId ? sessionById.get(note.sessionId) : undefined}
+                        onEdit={() => onEditNote(note)}
+                        onDelete={() => onDeleteNote(note._id)}
+                      />
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-white/10 bg-white/5">
+                <CardHeader>
+                  <CardTitle>Session notes timeline</CardTitle>
+                  <CardDescription>
+                    Session-linked notes, newest first.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {sessionNotes.length === 0 ? (
+                    <p className="text-sm text-slate-300">No session notes yet.</p>
+                  ) : (
+                    sessionNotes.map((note) => (
+                      <StudentNoteCard
+                        key={String(note._id)}
+                        note={note}
+                        session={note.sessionId ? sessionById.get(note.sessionId) : undefined}
+                        onEdit={() => onEditNote(note)}
+                        onDelete={() => onDeleteNote(note._id)}
+                      />
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StudentNoteCard({
+  note,
+  session,
+  onEdit,
+  onDelete,
+}: {
+  note: StudentNoteDoc;
+  session?: SessionDoc;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const updated = note.updatedAt !== note.createdAt;
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-slate-950/35 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
+              {note.type === "session" ? "Session note" : "General note"}
+            </span>
+            {note.title ? (
+              <span className="truncate text-sm font-semibold text-white">
+                {note.title}
+              </span>
+            ) : null}
+          </div>
+          {session ? (
+            <div className="mt-2 text-sm text-slate-300">
+              Linked session: {formatDateTime(session.startAt)}
+            </div>
+          ) : null}
+          <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-200">
+            {note.content}
+          </div>
+          <div className="mt-3 space-y-1 text-xs text-slate-400">
+            <div>Created {formatDateTime(note.createdAt)}</div>
+            {updated ? <div>Updated {formatDateTime(note.updatedAt)}</div> : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            Edit Note
+          </Button>
+          <Button variant="destructive" size="sm" onClick={onDelete}>
+            Delete Note
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SessionCompletionDialog({
+  open,
+  onOpenChange,
+  session,
+  draft,
+  setDraft,
+  onSave,
+  submitting,
+}: {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+  session?: SessionDoc;
+  draft: SessionCompletionDraft;
+  setDraft: Dispatch<SetStateAction<SessionCompletionDraft>>;
+  onSave: () => void;
+  submitting: boolean;
+}) {
+  if (!session) {
+    return null;
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl border-white/10 bg-slate-950/95 text-foreground">
+        <DialogHeader>
+          <DialogTitle>Mark session done</DialogTitle>
+          <DialogDescription>
+            Add a short note now so the outcome is saved with the session.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4 text-sm text-slate-300">
+            <div className="font-semibold text-white">{session.studentName}</div>
+            <div className="mt-1">{formatDateTime(session.startAt)}</div>
+            <div className="mt-1">{session.durationMinutes} minutes</div>
+          </div>
+
+          <Field label="Session note title">
+            <Input
+              className={fieldClass}
+              value={draft.title}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, title: event.target.value }))
+              }
+              placeholder="Optional short title"
+            />
+          </Field>
+
+          <Field label="What happened in this session?">
+            <textarea
+              className={cn(fieldClass, "min-h-32 pt-2")}
+              value={draft.content}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, content: event.target.value }))
+              }
+              placeholder="Discussed topics, progress, homework, blockers, and next steps."
+            />
+          </Field>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={onSave} disabled={submitting}>
+            Mark done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2247,6 +3344,11 @@ function StudentCompactCard({
               #{row.student.order.toString().padStart(2, "0")}
             </span>
             <StatusTag status={row.statusTone === "green" ? "done" : "scheduled"} />
+            {row.noteCount > 0 ? (
+              <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-200">
+                {row.noteCount} note{row.noteCount === 1 ? "" : "s"}
+              </span>
+            ) : null}
           </div>
           <h3 className="mt-2 truncate text-base font-semibold text-white">
             {row.student.name}
@@ -2315,6 +3417,11 @@ function StudentFullCard({
             <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
               Active
             </span>
+            {row.noteCount > 0 ? (
+              <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-200">
+                {row.noteCount} note{row.noteCount === 1 ? "" : "s"}
+              </span>
+            ) : null}
           </div>
           <h3 className="mt-2 truncate text-lg font-semibold text-white">
             {row.student.name}
