@@ -378,6 +378,7 @@ export default function App() {
     leadSource: "Organic / Direct",
     leadSourceOther: "",
     sessionGoal: "12",
+    totalFee: String(totalCourseFee),
     amountPaid: String(totalCourseFee),
     amountDue: "0",
     lastPaymentOn: "",
@@ -392,6 +393,7 @@ export default function App() {
   );
 
   const [feeDraft, setFeeDraft] = useState({
+    totalFee: String(totalCourseFee),
     amountPaid: "0",
     amountDue: "0",
     lastPaymentOn: "",
@@ -436,12 +438,6 @@ export default function App() {
       setSessionDraft((draft) => ({ ...draft, studentId: String(students[0]._id) }));
     }
   }, [students, sessionDraft.studentId]);
-
-  useEffect(() => {
-    if (students && students.length > 0 && !selectedFeeStudentId) {
-      setSelectedFeeStudentId(students[0]._id);
-    }
-  }, [students, selectedFeeStudentId]);
 
   const feesByStudentId = useMemo(() => {
     return new Map((fees ?? []).map((fee) => [fee.studentId, fee]));
@@ -668,6 +664,7 @@ export default function App() {
   useEffect(() => {
     if (selectedFee) {
       setFeeDraft({
+        totalFee: String(selectedFee.totalFee ?? totalCourseFee),
         amountPaid: String(selectedFee.amountPaid),
         amountDue: String(selectedFee.amountDue),
         lastPaymentOn: selectedFee.lastPaymentOn ?? "",
@@ -730,6 +727,7 @@ export default function App() {
       leadSource: "Organic / Direct",
       leadSourceOther: "",
       sessionGoal: "12",
+      totalFee: String(totalCourseFee),
       amountPaid: String(totalCourseFee),
       amountDue: "0",
       lastPaymentOn: "",
@@ -1013,6 +1011,7 @@ export default function App() {
       await addStudent({
         name,
         sessionGoal: Number(studentDraft.sessionGoal || 12),
+        totalFee: Number(studentDraft.totalFee || totalCourseFee),
         amountPaid: Number(studentDraft.amountPaid || 0),
         amountDue: Number(studentDraft.amountDue || 0),
         lastPaymentOn: studentDraft.lastPaymentOn.trim() || null,
@@ -1039,6 +1038,7 @@ export default function App() {
       }
       await saveFeeAccount({
         studentId: selectedFeeStudentId,
+        totalFee: Number(feeDraft.totalFee || totalCourseFee),
         amountPaid: Number(feeDraft.amountPaid || 0),
         amountDue: Number(feeDraft.amountDue || 0),
         lastPaymentOn: feeDraft.lastPaymentOn.trim() || null,
@@ -1470,6 +1470,20 @@ export default function App() {
                 }
               />
             </Field>
+            <Field label="Total fee agreed">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={0}
+                value={studentDraft.totalFee}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    totalFee: event.target.value,
+                  }))
+                }
+              />
+            </Field>
             <Field label="Amount paid">
               <Input
                 className={fieldClass}
@@ -1563,6 +1577,17 @@ export default function App() {
           </DialogHeader>
 
           <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Total fee">
+              <Input
+                className={fieldClass}
+                type="number"
+                min={0}
+                value={feeDraft.totalFee}
+                onChange={(event) =>
+                  setFeeDraft((draft) => ({ ...draft, totalFee: event.target.value }))
+                }
+              />
+            </Field>
             <Field label="Amount paid">
               <Input
                 className={fieldClass}
@@ -2642,6 +2667,7 @@ function FeesView({
   totalOutstanding: number;
 }) {
   const dueStudentsCount = fees.filter((fee) => fee.amountDue > 0).length;
+  const totalEarned = fees.reduce((sum, fee) => sum + fee.amountPaid, 0);
 
   return (
     <div className="space-y-6">
@@ -2669,6 +2695,12 @@ function FeesView({
           value={formatCurrency(totalCourseFee)}
           detail="per student"
           accent="slate"
+        />
+        <MetricCard
+          label="Total earned"
+          value={formatCurrency(totalEarned)}
+          detail="all payments received"
+          accent="emerald"
         />
       </section>
 
@@ -2732,6 +2764,9 @@ function FeesView({
                       </div>
                       <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-300">
                         <span>Paid: {formatCurrency(row.fee?.amountPaid ?? 0)}</span>
+                        <span>
+                          Total fee: {formatCurrency(row.fee?.totalFee ?? totalCourseFee)}
+                        </span>
                         <span>Due: {formatCurrency(row.fee?.amountDue ?? totalCourseFee)}</span>
                         <span>
                           Last payment: {formatDateOnly(row.fee?.lastPaymentOn ?? null)}
@@ -2776,6 +2811,9 @@ function FeesView({
                     <div className="font-medium text-white">{fee.studentName}</div>
                     <div className="text-xs text-slate-400">
                       #{fee.studentOrder.toString().padStart(2, "0")}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Total: {formatCurrency(fee.totalFee)}
                     </div>
                   </div>
                   <div className="col-span-2 text-emerald-300">

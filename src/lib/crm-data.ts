@@ -19,6 +19,7 @@ export type SeedSession = {
 
 export type SeedFeeAccount = {
   studentName: string;
+  totalFee: number;
   amountPaid: number;
   amountDue: number;
   lastPaymentOn: string | null;
@@ -119,6 +120,7 @@ export const sessionSeedData: SeedSession[] = [
 export const feeSeedData: SeedFeeAccount[] = [
   {
     studentName: "Mian Saad Hafeez",
+    totalFee: 400,
     amountPaid: 400,
     amountDue: 0,
     lastPaymentOn: null,
@@ -127,6 +129,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Kamran Choudhary",
+    totalFee: 400,
     amountPaid: 400,
     amountDue: 0,
     lastPaymentOn: null,
@@ -135,6 +138,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Adnan Zafat",
+    totalFee: 400,
     amountPaid: 400,
     amountDue: 0,
     lastPaymentOn: null,
@@ -143,6 +147,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Ramanjot",
+    totalFee: 400,
     amountPaid: 400,
     amountDue: 0,
     lastPaymentOn: null,
@@ -151,6 +156,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Abdul Rehman",
+    totalFee: 400,
     amountPaid: 400,
     amountDue: 0,
     lastPaymentOn: null,
@@ -159,6 +165,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Waleed Iftikhar",
+    totalFee: 400,
     amountPaid: 200,
     amountDue: 200,
     lastPaymentOn: "2026-05-29",
@@ -167,6 +174,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Arslan",
+    totalFee: 400,
     amountPaid: 200,
     amountDue: 200,
     lastPaymentOn: null,
@@ -175,6 +183,7 @@ export const feeSeedData: SeedFeeAccount[] = [
   },
   {
     studentName: "Touqeer",
+    totalFee: 400,
     amountPaid: 400,
     amountDue: 0,
     lastPaymentOn: null,

@@ -4,7 +4,6 @@ import {
   feeSeedData,
   sessionSeedData,
   studentSeedData,
-  totalCourseFee,
 } from "../src/lib/crm-data";
 
 function computeInitials(name: string) {
@@ -178,7 +177,7 @@ export const ensureSeedData = mutation({
           studentId: student._id,
           studentOrder: student.order,
           studentName: seed.studentName,
-          totalFee: totalCourseFee,
+          totalFee: seed.totalFee,
           amountPaid: seed.amountPaid,
           amountDue: seed.amountDue,
           lastPaymentOn: seed.lastPaymentOn,
@@ -234,6 +233,7 @@ export const addStudent = mutation({
   args: {
     name: v.string(),
     sessionGoal: v.number(),
+    totalFee: v.number(),
     amountPaid: v.number(),
     amountDue: v.number(),
     lastPaymentOn: v.union(v.string(), v.null()),
@@ -283,7 +283,7 @@ export const addStudent = mutation({
       studentId,
       studentOrder: nextOrder + 1,
       studentName: args.name.trim(),
-      totalFee: totalCourseFee,
+      totalFee: args.totalFee,
       amountPaid: args.amountPaid,
       amountDue: args.amountDue,
       lastPaymentOn: args.lastPaymentOn,
@@ -365,6 +365,7 @@ export const saveStudentProfile = mutation({
 export const saveFeeAccount = mutation({
   args: {
     studentId: v.id("students"),
+    totalFee: v.number(),
     amountPaid: v.number(),
     amountDue: v.number(),
     lastPaymentOn: v.union(v.string(), v.null()),
@@ -386,7 +387,7 @@ export const saveFeeAccount = mutation({
       studentId: student._id,
       studentOrder: student.order,
       studentName: student.name,
-      totalFee: totalCourseFee,
+      totalFee: args.totalFee,
       amountPaid: args.amountPaid,
       amountDue: args.amountDue,
       lastPaymentOn: args.lastPaymentOn,
