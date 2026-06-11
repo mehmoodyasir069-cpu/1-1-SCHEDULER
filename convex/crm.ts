@@ -45,6 +45,10 @@ function normalizeProfileFields(args: {
   };
 }
 
+function normalizeLeadSource(value: string | null | undefined) {
+  return normalizeText(value);
+}
+
 async function getStudentMap(ctx: any): Promise<Map<string, any>> {
   const students: any[] = await ctx.db
     .query("students")
@@ -97,6 +101,8 @@ export const ensureSeedData = mutation({
           sessionGoal: seed.sessionGoal,
           note: seed.note,
           createdAt: Date.now(),
+          leadSource: "",
+          leadSourceOther: "",
           currentState: "",
           goals: "",
           investmentBudget: "",
@@ -116,6 +122,8 @@ export const ensureSeedData = mutation({
           sessionGoal: seed.sessionGoal,
           note: seed.note,
           createdAt: Date.now(),
+          leadSource: "",
+          leadSourceOther: "",
           currentState: "",
           goals: "",
           investmentBudget: "",
@@ -231,6 +239,8 @@ export const addStudent = mutation({
     lastPaymentOn: v.union(v.string(), v.null()),
     nextDueOn: v.union(v.string(), v.null()),
     note: v.union(v.string(), v.null()),
+    leadSource: v.optional(v.string()),
+    leadSourceOther: v.optional(v.string()),
     currentState: v.optional(v.string()),
     goals: v.optional(v.string()),
     investmentBudget: v.optional(v.string()),
@@ -257,6 +267,8 @@ export const addStudent = mutation({
       note:
         args.note ?? "New student added from the CRM forms.",
       createdAt: now,
+      leadSource: normalizeLeadSource(args.leadSource),
+      leadSourceOther: normalizeLeadSource(args.leadSourceOther),
       currentState: normalizeText(args.currentState),
       goals: normalizeText(args.goals),
       investmentBudget: normalizeText(args.investmentBudget),
@@ -297,6 +309,8 @@ export const saveStudentProfile = mutation({
     problemsWeaknesses: v.string(),
     importantReminders: v.string(),
     note: v.string(),
+    leadSource: v.string(),
+    leadSourceOther: v.string(),
   },
   handler: async (ctx, args) => {
     const student = await ctx.db.get(args.studentId);
@@ -315,6 +329,8 @@ export const saveStudentProfile = mutation({
       initials: computeInitials(name),
       note: args.note,
       updatedAt: now,
+      leadSource: normalizeLeadSource(args.leadSource),
+      leadSourceOther: normalizeLeadSource(args.leadSourceOther),
       ...normalizeProfileFields(args),
     });
 

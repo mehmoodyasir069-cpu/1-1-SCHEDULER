@@ -11,6 +11,8 @@ export default defineSchema({
     sessionGoal: v.number(),
     note: v.string(),
     createdAt: v.number(),
+    leadSource: v.optional(v.string()),
+    leadSourceOther: v.optional(v.string()),
     currentState: v.optional(v.string()),
     goals: v.optional(v.string()),
     investmentBudget: v.optional(v.string()),

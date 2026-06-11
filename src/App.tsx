@@ -60,6 +60,8 @@ type StudentDoc = {
   sessionGoal: number;
   note: string;
   createdAt: number;
+  leadSource?: string;
+  leadSourceOther?: string;
   currentState?: string;
   goals?: string;
   investmentBudget?: string;
@@ -133,6 +135,8 @@ type StudentRow = {
 
 type StudentProfileDraft = {
   name: string;
+  leadSource: string;
+  leadSourceOther: string;
   currentState: string;
   goals: string;
   investmentBudget: string;
@@ -175,6 +179,110 @@ const fieldClass =
 
 const selectFieldClass = cn(fieldClass, "bg-slate-950/90 text-slate-100");
 const darkControlStyle = { colorScheme: "dark" as const };
+
+const leadSourceOptions = [
+  "Facebook Ad",
+  "Facebook Group",
+  "YouTube",
+  "TikTok",
+  "Instagram",
+  "WhatsApp Referral",
+  "Personal Referral",
+  "Existing Student Referral",
+  "Website",
+  "Organic / Direct",
+  "Other",
+] as const;
+
+const leadSourceFilterOptions = [
+  "All Lead Sources",
+  ...leadSourceOptions,
+  "Referral",
+] as const;
+
+function normalizeLeadSource(value?: string | null) {
+  return value?.trim() ?? "";
+}
+
+function displayLeadSource(student: Pick<StudentDoc, "leadSource" | "leadSourceOther">) {
+  const source = normalizeLeadSource(student.leadSource);
+  if (!source) return "Not recorded";
+  if (source === "Other") {
+    const other = normalizeLeadSource(student.leadSourceOther);
+    return other ? `Other: ${other}` : "Other";
+  }
+  return source;
+}
+
+function leadSourceTone(source: string) {
+  const normalized = normalizeLeadSource(source);
+  if (normalized === "Referral") return "emerald";
+  if (normalized.startsWith("Other:")) return "purple";
+  if (
+    normalized === "Facebook Ad" ||
+    normalized === "Facebook Group"
+  ) {
+    return "blue";
+  }
+  if (normalized === "YouTube") return "red";
+  if (normalized === "TikTok") return "slate";
+  if (normalized === "Instagram") return "pink";
+  if (
+    normalized === "WhatsApp Referral" ||
+    normalized === "Personal Referral" ||
+    normalized === "Existing Student Referral"
+  ) {
+    return "emerald";
+  }
+  if (normalized === "Website") return "amber";
+  if (normalized === "Organic / Direct") return "slate";
+  if (normalized === "Other") return "purple";
+  return "slate";
+}
+
+function leadSourceBadgeClass(source: string) {
+  const tone = leadSourceTone(source);
+  return {
+    blue: "border-sky-400/20 bg-sky-500/10 text-sky-100",
+    red: "border-rose-400/20 bg-rose-500/10 text-rose-100",
+    slate: "border-slate-400/20 bg-slate-500/10 text-slate-100",
+    pink: "border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-100",
+    emerald: "border-emerald-400/20 bg-emerald-500/10 text-emerald-100",
+    amber: "border-amber-400/20 bg-amber-500/10 text-amber-100",
+    purple: "border-purple-400/20 bg-purple-500/10 text-purple-100",
+  }[tone];
+}
+
+function leadSourceMatchesFilter(student: StudentDoc, filter: string) {
+  const source = normalizeLeadSource(student.leadSource);
+  if (filter === "All Lead Sources") return true;
+  if (filter === "Referral") {
+    return (
+      source === "WhatsApp Referral" ||
+      source === "Personal Referral" ||
+      source === "Existing Student Referral"
+    );
+  }
+  if (filter === "Other") return source === "Other";
+  return source === filter;
+}
+
+function leadSourceSummaryLabel(student: StudentDoc) {
+  const source = normalizeLeadSource(student.leadSource);
+  if (!source) return "Not recorded";
+  if (source === "Other") {
+    const other = normalizeLeadSource(student.leadSourceOther);
+    return other ? `Other: ${other}` : "Other";
+  }
+  if (
+    source === "WhatsApp Referral" ||
+    source === "Personal Referral" ||
+    source === "Existing Student Referral"
+  ) {
+    return "Referral";
+  }
+  return source;
+}
 
 function createSessionDraft(overrides: Partial<SessionDraft> = {}): SessionDraft {
   return {
@@ -231,6 +339,8 @@ export default function App() {
   const [profileEditing, setProfileEditing] = useState(false);
   const [profileDraft, setProfileDraft] = useState<StudentProfileDraft>({
     name: "",
+    leadSource: "",
+    leadSourceOther: "",
     currentState: "",
     goals: "",
     investmentBudget: "",
@@ -265,6 +375,8 @@ export default function App() {
 
   const [studentDraft, setStudentDraft] = useState({
     name: "",
+    leadSource: "Organic / Direct",
+    leadSourceOther: "",
     sessionGoal: "12",
     amountPaid: String(totalCourseFee),
     amountDue: "0",
@@ -290,6 +402,8 @@ export default function App() {
   const [postponeDraft, setPostponeDraft] = useState<SessionDraft>(
     createSessionDraft(),
   );
+  const [studentSearch, setStudentSearch] = useState("");
+  const [leadSourceFilter, setLeadSourceFilter] = useState("All Lead Sources");
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick(Date.now()), 60_000);
@@ -410,6 +524,36 @@ export default function App() {
       };
     });
   }, [students, sessionsByStudentId, feesByStudentId, notesByStudentId, clockTick]);
+
+  const filteredStudentRows = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    return studentRows.filter((row) => {
+      const matchesSearch =
+        !query ||
+        row.student.name.toLowerCase().includes(query) ||
+        row.student.order.toString().includes(query) ||
+        displayLeadSource(row.student).toLowerCase().includes(query) ||
+        normalizeLeadSource(row.student.leadSourceOther).toLowerCase().includes(query) ||
+        (row.student.note ?? "").toLowerCase().includes(query);
+      return matchesSearch && leadSourceMatchesFilter(row.student, leadSourceFilter);
+    });
+  }, [studentRows, studentSearch, leadSourceFilter]);
+
+  const leadSourceSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const student of students ?? []) {
+      const label = leadSourceSummaryLabel(student);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({
+        label,
+        count,
+        tone: leadSourceTone(label),
+      }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 6);
+  }, [students]);
 
   const scheduledSessions = useMemo(() => {
     return (sessions ?? [])
@@ -549,6 +693,8 @@ export default function App() {
     if (!selectedStudent) return;
     setProfileDraft({
       name: selectedStudent.name,
+      leadSource: normalizeLeadSource(selectedStudent.leadSource) || "Organic / Direct",
+      leadSourceOther: selectedStudent.leadSourceOther ?? "",
       currentState: selectedStudent.currentState ?? "",
       goals: selectedStudent.goals ?? "",
       investmentBudget: selectedStudent.investmentBudget ?? "",
@@ -581,6 +727,8 @@ export default function App() {
   const openAddStudent = () => {
     setStudentDraft({
       name: "",
+      leadSource: "Organic / Direct",
+      leadSourceOther: "",
       sessionGoal: "12",
       amountPaid: String(totalCourseFee),
       amountDue: "0",
@@ -734,6 +882,8 @@ export default function App() {
       await saveStudentProfile({
         studentId: selectedStudent._id,
         name,
+        leadSource: profileDraft.leadSource,
+        leadSourceOther: profileDraft.leadSource === "Other" ? profileDraft.leadSourceOther : "",
         currentState: profileDraft.currentState.trim(),
         goals: profileDraft.goals.trim(),
         investmentBudget: profileDraft.investmentBudget.trim(),
@@ -868,6 +1018,8 @@ export default function App() {
         lastPaymentOn: studentDraft.lastPaymentOn.trim() || null,
         nextDueOn: studentDraft.nextDueOn.trim() || null,
         note: studentDraft.note.trim() || null,
+        leadSource: studentDraft.leadSource,
+        leadSourceOther: studentDraft.leadSource === "Other" ? studentDraft.leadSourceOther : "",
       });
       setAddStudentOpen(false);
       showSuccess(`Added ${name} to the CRM.`);
@@ -1172,6 +1324,7 @@ export default function App() {
                   upcomingDueSoon={upcomingDueSoon}
                   studentRows={studentRows}
                   scheduledSessions={scheduledSessions}
+                  leadSourceSummary={leadSourceSummary}
                   unscheduledStudents={unscheduledStudents}
                   onJump={setActiveView}
                   onAddSlot={openAddSession}
@@ -1180,7 +1333,11 @@ export default function App() {
 
               {activeView === "students" ? (
                 <StudentsView
-                  studentRows={studentRows}
+                  studentRows={filteredStudentRows}
+                  studentSearch={studentSearch}
+                  leadSourceFilter={leadSourceFilter}
+                  setStudentSearch={setStudentSearch}
+                  setLeadSourceFilter={setLeadSourceFilter}
                   onAddSlot={openAddSession}
                   onAddStudent={openAddStudent}
                   onFocusStudent={(studentId) => {
@@ -1263,6 +1420,42 @@ export default function App() {
                 placeholder="Enter full name"
               />
             </Field>
+            <Field label="Lead source">
+              <select
+                className={selectFieldClass}
+                style={darkControlStyle}
+                value={studentDraft.leadSource}
+                onChange={(event) =>
+                  setStudentDraft((draft) => ({
+                    ...draft,
+                    leadSource: event.target.value,
+                    leadSourceOther:
+                      event.target.value === "Other" ? draft.leadSourceOther : "",
+                  }))
+                }
+              >
+                {leadSourceOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {studentDraft.leadSource === "Other" ? (
+              <Field label="Other lead source">
+                <Input
+                  className={fieldClass}
+                  value={studentDraft.leadSourceOther}
+                  onChange={(event) =>
+                    setStudentDraft((draft) => ({
+                      ...draft,
+                      leadSourceOther: event.target.value,
+                    }))
+                  }
+                  placeholder="Describe the source"
+                />
+              </Field>
+            ) : null}
             <Field label="Session goal">
               <Input
                 className={fieldClass}
@@ -1781,6 +1974,7 @@ function DashboardView({
   upcomingDueSoon,
   studentRows,
   scheduledSessions,
+  leadSourceSummary,
   onJump,
   onAddSlot,
 }: {
@@ -1795,6 +1989,7 @@ function DashboardView({
   upcomingDueSoon: FeeDoc[];
   studentRows: StudentRow[];
   scheduledSessions: SessionDoc[];
+  leadSourceSummary: Array<{ label: string; count: number; tone: string }>;
   onJump: (view: ViewKey) => void;
   onAddSlot: (studentId?: Id<"students">) => void;
 }) {
@@ -1865,6 +2060,38 @@ function DashboardView({
               Open calendar
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Lead source snapshot</CardTitle>
+            <CardDescription>Quick counts from the student records.</CardDescription>
+          </div>
+          <Button variant="outline" onClick={() => onJump("students")}>
+            Filter students
+          </Button>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          {leadSourceSummary.length > 0 ? (
+            leadSourceSummary.map((item) => (
+              <span
+                key={item.label}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold",
+                  leadSourceBadgeClass(item.label),
+                )}
+              >
+                <span>{item.label}</span>
+                <span className="rounded-full bg-black/20 px-2 py-0.5 text-[11px]">
+                  {item.count}
+                </span>
+              </span>
+            ))
+          ) : (
+            <p className="text-sm text-slate-300">No lead sources recorded yet.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -1955,11 +2182,19 @@ function DashboardView({
 
 function StudentsView({
   studentRows,
+  studentSearch,
+  leadSourceFilter,
+  setStudentSearch,
+  setLeadSourceFilter,
   onAddSlot,
   onAddStudent,
   onFocusStudent,
 }: {
   studentRows: StudentRow[];
+  studentSearch: string;
+  leadSourceFilter: string;
+  setStudentSearch: Dispatch<SetStateAction<string>>;
+  setLeadSourceFilter: Dispatch<SetStateAction<string>>;
   onAddSlot: (studentId?: Id<"students">) => void;
   onAddStudent: () => void;
   onFocusStudent: (studentId: Id<"students">) => void;
@@ -1978,15 +2213,42 @@ function StudentsView({
         </Button>
       </CardHeader>
       <CardContent>
+        <div className="mb-5 grid gap-3 md:grid-cols-[1.4fr_0.8fr]">
+          <Input
+            className={fieldClass}
+            value={studentSearch}
+            onChange={(event) => setStudentSearch(event.target.value)}
+            placeholder="Search name, student number, or lead source"
+          />
+          <select
+            className={selectFieldClass}
+            style={darkControlStyle}
+            value={leadSourceFilter}
+            onChange={(event) => setLeadSourceFilter(event.target.value)}
+          >
+            {leadSourceFilterOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {studentRows.map((row) => (
-            <StudentFullCard
-              key={String(row.student._id)}
-              row={row}
-              onAddSlot={onAddSlot}
-              onFocusStudent={onFocusStudent}
-            />
-          ))}
+          {studentRows.length > 0 ? (
+            studentRows.map((row) => (
+              <StudentFullCard
+                key={String(row.student._id)}
+                row={row}
+                onAddSlot={onAddSlot}
+                onFocusStudent={onFocusStudent}
+              />
+            ))
+          ) : (
+            <div className="rounded-3xl border border-white/10 bg-slate-950/35 p-6 text-sm text-slate-300">
+              No students match this filter yet.
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -2744,6 +3006,19 @@ function StudentProfileDialog({
                             {sessions.length} sessions
                           </span>
                         </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                            Lead source
+                          </span>
+                          <span
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                              leadSourceBadgeClass(student.leadSource ?? ""),
+                            )}
+                          >
+                            {displayLeadSource(student)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
@@ -2776,8 +3051,24 @@ function StudentProfileDialog({
                       <div className="text-xs uppercase tracking-[0.25em] text-slate-500">
                         Profile summary
                       </div>
-                      <div className="mt-2 text-sm text-slate-300">
-                        {student.note || "No summary note added yet."}
+                      <div className="mt-2 space-y-2 text-sm text-slate-300">
+                        <div>
+                          <span className="text-slate-400">Lead source: </span>
+                          <span className="text-white">
+                            {displayLeadSource(student)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Other lead source: </span>
+                          <span className="text-white">
+                            {student.leadSource === "Other"
+                              ? student.leadSourceOther || "Not recorded"
+                              : "Not applicable"}
+                          </span>
+                        </div>
+                        <div className="pt-1">
+                          {student.note || "No summary note added yet."}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2794,6 +3085,44 @@ function StudentProfileDialog({
                         disabled={!profileEditing}
                       />
                     </Field>
+                    <Field label="Lead source">
+                      <select
+                        className={selectFieldClass}
+                        style={darkControlStyle}
+                        value={profileDraft.leadSource}
+                        onChange={(event) =>
+                          setProfileDraft((draft) => ({
+                            ...draft,
+                            leadSource: event.target.value,
+                            leadSourceOther:
+                              event.target.value === "Other" ? draft.leadSourceOther : "",
+                          }))
+                        }
+                        disabled={!profileEditing}
+                      >
+                        {leadSourceOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    {profileDraft.leadSource === "Other" ? (
+                      <Field label="Other lead source">
+                        <Input
+                          className={fieldClass}
+                          value={profileDraft.leadSourceOther}
+                          onChange={(event) =>
+                            setProfileDraft((draft) => ({
+                              ...draft,
+                              leadSourceOther: event.target.value,
+                            }))
+                          }
+                          disabled={!profileEditing}
+                          placeholder="Describe the source"
+                        />
+                      </Field>
+                    ) : null}
                     <Field label="Investment budget">
                       <Input
                         className={fieldClass}
@@ -2908,6 +3237,8 @@ function StudentProfileDialog({
                           setProfileEditing(false);
                           setProfileDraft({
                             name: student.name,
+                            leadSource: normalizeLeadSource(student.leadSource) || "Organic / Direct",
+                            leadSourceOther: student.leadSourceOther ?? "",
                             currentState: student.currentState ?? "",
                             goals: student.goals ?? "",
                             investmentBudget: student.investmentBudget ?? "",
@@ -3344,6 +3675,14 @@ function StudentCompactCard({
               #{row.student.order.toString().padStart(2, "0")}
             </span>
             <StatusTag status={row.statusTone === "green" ? "done" : "scheduled"} />
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                leadSourceBadgeClass(row.student.leadSource ?? ""),
+              )}
+            >
+              {displayLeadSource(row.student)}
+            </span>
             {row.noteCount > 0 ? (
               <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-200">
                 {row.noteCount} note{row.noteCount === 1 ? "" : "s"}
@@ -3416,6 +3755,14 @@ function StudentFullCard({
             <StatusTag status={row.statusTone === "green" ? "done" : "scheduled"} />
             <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
               Active
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                leadSourceBadgeClass(row.student.leadSource ?? ""),
+              )}
+            >
+              {displayLeadSource(row.student)}
             </span>
             {row.noteCount > 0 ? (
               <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-200">
