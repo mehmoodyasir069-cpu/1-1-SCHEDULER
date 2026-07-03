@@ -18,6 +18,7 @@ allowed_actions = [
   "Check local or preview routes when available.",
   "Check Netlify deployment status when tools/access are available.",
   "Write Safe Release Push Mode gate results.",
+  "Confirm whether a clear push/release command already supplies release approval.",
 ]
 
 repo_checks = [
@@ -45,7 +46,9 @@ verify_report_fields = [
   "SAFE TO RELEASE TO MAIN",
   "SAFE TO DEPLOY VIA NETLIFY",
   "SAFE TO FORCE PUSH",
+  "SAFE TO RELEASE",
   "SAFE TO RELEASE/PUSH",
+  "whether repeated approval questions are needed",
   "pass/fail",
 ]
 

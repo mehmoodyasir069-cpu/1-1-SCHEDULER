@@ -161,6 +161,8 @@ Default:
 
 When Yasir says `push`, `push it`, `push now`, `push to main`, `send it live`, `release it`, or gives any clear push/release approval, Codex must treat that as one full safe release command, not a simple `git push`.
 
+That single command is Yasir's approval for the full safe release pipeline. Codex must not ask Yasir separate follow-up questions such as whether to commit, push, merge, or deploy. CEO asks Yasir only if the release target is ambiguous, a stop condition applies, or `SAFE TO RELEASE: NO`.
+
 Safe release pipeline:
 
 1. `yasir-ceo` starts first.
@@ -179,9 +181,9 @@ Safe release pipeline:
 6. `developer` is the only agent allowed to change code.
 7. `verifier` checks again.
 8. `auditor` updates logs, handover, decisions, and release checklist.
-9. CEO decides `SAFE TO RELEASE/PUSH: YES/NO`.
-10. If `YES`, Codex may perform the approved release push actions.
-11. If `NO`, Codex must stop and report why.
+9. CEO decides `SAFE TO RELEASE: YES/NO` and `SAFE TO RELEASE/PUSH: YES/NO`.
+10. If `YES`, Codex may perform the approved release push actions without asking Yasir for extra commit, push, merge, or deploy approval.
+11. If `NO`, Codex must not commit, push, merge, or deploy; CEO must stop and report the blocker and exact next fix.
 
 ### Default Push Meaning
 
@@ -207,6 +209,8 @@ After the relevant gates are `YES`, Codex may:
 - allow connected deployment such as Netlify to trigger
 - check/report deployment status if tools/access are available
 
+Codex must perform only the actions required by the normal project release path and the wording Yasir used.
+
 ### Never Bypass
 
 - failed tests
@@ -227,6 +231,7 @@ Never force push unless Yasir explicitly says force push and CEO separately conf
 - `SAFE TO RELEASE TO MAIN: YES/NO`
 - `SAFE TO DEPLOY VIA NETLIFY: YES/NO`
 - `SAFE TO FORCE PUSH: YES/NO`
+- `SAFE TO RELEASE: YES/NO`
 - `SAFE TO RELEASE/PUSH: YES/NO`
 
 If any required gate is `NO`:
@@ -235,6 +240,8 @@ If any required gate is `NO`:
 - do not merge
 - do not deploy
 - explain blocker and next safe fix
+
+Do not ask Yasir to approve bypassing failed tests, failed builds, branch protection, secrets protection, dirty unknown user changes, or unsafe auth/payment/database/deploy risk. Fix or block instead.
 
 ### Netlify Release Risk
 
@@ -260,6 +267,7 @@ Push instruction detected: yes/no
 Requested push target:
 Release command detected: yes/no
 Branch before release:
+Separate approval questions asked: yes/no
 
 What happened:
 - ...
@@ -302,6 +310,7 @@ Safe to push current branch: YES/NO
 Safe to release to main: YES/NO
 Safe to deploy via Netlify: YES/NO
 Safe to force push: YES/NO
+Safe to release: YES/NO
 Safe to release/push: YES/NO
 Safe to merge: YES/NO
 Safe to deploy: YES/NO

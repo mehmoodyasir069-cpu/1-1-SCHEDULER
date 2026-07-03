@@ -43,6 +43,7 @@ required_output = "CHANGE_REPORT"
 must_not = [
   "Approve own work.",
   "Push, merge, release, or deploy unless Safe Release Push Mode applies and CEO approved the required gates.",
+  "Ask Yasir separate approval questions for commit, push, merge, or deploy after CEO approved SAFE TO RELEASE/PUSH.",
   "Force push.",
   "Touch env files or secrets.",
   "Exceed the CEO-approved task brief.",

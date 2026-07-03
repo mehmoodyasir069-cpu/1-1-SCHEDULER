@@ -30,6 +30,7 @@ Record yes/no for:
 - Main branch touched
 - Push instruction detected
 - Release command detected
+- Clear push/release approval already given
 - Requested push target
 - Netlify deploy risk
 - Deployment status if checkable
@@ -42,6 +43,7 @@ If Yasir requested push/release, write the relevant gates:
 - `SAFE TO RELEASE TO MAIN: YES/NO`
 - `SAFE TO DEPLOY VIA NETLIFY: YES/NO`
 - `SAFE TO FORCE PUSH: YES/NO`
+- `SAFE TO RELEASE: YES/NO`
 - `SAFE TO RELEASE/PUSH: YES/NO`
 
 Set the relevant gate to `YES` only when branch, target, diff, risk review, available checks, verifier report, secrets/env safety, current build state, deployment risk/status, and rollback plan are acceptable.
@@ -56,5 +58,6 @@ Set the relevant gate to `YES` only when branch, target, diff, risk review, avai
 
 - Default is no push, merge, release, or deploy.
 - Generic `push` or `push it` runs the full safe release pipeline to the normal release target, usually `main`.
+- When a clear push/release command exists and gates pass, do not ask Yasir separate approval to commit, push, merge, update main, or deploy.
 - `push this branch only` or `push feature branch only` limits action to that branch.
 - Main pushes may trigger Netlify production deploy and require `SAFE TO RELEASE TO MAIN: YES` and `SAFE TO DEPLOY VIA NETLIFY: YES` when Netlify is in the release path.

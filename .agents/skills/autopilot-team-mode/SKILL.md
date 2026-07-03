@@ -37,6 +37,7 @@ Subagents return reports to CEO. CEO decides the next action and repeats until c
 
 - Default is no push, no merge, no deploy.
 - If Yasir says `push`, `push it`, `push now`, `push to main`, `send it live`, `release it`, or gives clear push/release approval, run `safe-release-push-mode`.
+- That single command is approval for the full safe release pipeline. Do not ask separate approval to commit, push, merge, update main, or deploy after the required gates pass.
 - `push` or `push it` means full safe release pipeline to the normal release target, usually `main`.
 - `push this branch only` or `push feature branch only` means branch-only push: do not merge to main and do not deploy production.
 - Main pushes are production-impacting unless `PROJECT_CONTEXT.md` says otherwise.
@@ -52,5 +53,6 @@ Stop and ask Yasir if secrets, production database access, live payment/auth/dep
 - Never let Debugger, Verifier, or Auditor edit app code.
 - Never let Developer approve its own work.
 - Never push, merge, release, or deploy without clear Yasir approval and the required Safe Release Push Mode gates.
+- Never ask repeated approval questions after Yasir already gave clear push/release approval and `SAFE TO RELEASE/PUSH: YES`.
 - Never force push unless Yasir explicitly says force push and CEO confirms `SAFE TO FORCE PUSH: YES`.
 - Never call work safe without evidence.

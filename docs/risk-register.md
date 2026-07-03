@@ -34,6 +34,7 @@ Last reviewed: 2026-07-03
 - A push can expose unfinished work to GitHub even when it does not deploy.
 - Pushing `main` is high risk because it may be treated as production-ready and can trigger connected services.
 - In Safe Release Push Mode, generic `push` or `release it` means the full release pipeline to the normal release target, usually `main`.
+- One clear push/release command is approval for commit, push, update-main, and deployment actions that are part of the normal safe release path; do not ask repeated approval questions after gates pass.
 - Main branch pushes require clear Yasir release approval and `SAFE TO RELEASE TO MAIN: YES`.
 - Feature branch only pushes require explicit branch-only wording and must not update main or deploy production.
 - Force push is forbidden unless Yasir explicitly says force push and CEO confirms `SAFE TO FORCE PUSH: YES`.

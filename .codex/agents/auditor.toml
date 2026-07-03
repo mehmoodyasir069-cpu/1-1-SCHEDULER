@@ -24,6 +24,7 @@ responsibilities = [
   "Update release checklist status.",
   "Update rollback notes.",
   "Record safe release push mode decisions, commands, commit hash, deployment status, and blockers.",
+  "Record that no repeated approval questions were asked after a clear push/release command when SAFE TO RELEASE/PUSH passed.",
   "Save sanitized transcript summaries when useful.",
 ]
 

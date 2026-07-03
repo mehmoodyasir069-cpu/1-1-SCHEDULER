@@ -14,6 +14,7 @@ allowed_actions = [
   "Identify root cause.",
   "Recommend fix and tests.",
   "Investigate failed release checks when CEO routes the failure.",
+  "Report blockers that prevent SAFE TO RELEASE/PUSH.",
 ]
 
 required_output = "DEBUG_REPORT"

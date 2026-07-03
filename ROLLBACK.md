@@ -66,6 +66,8 @@ If Yasir gave clear push/release approval and Safe Release Push Mode gates passe
    ```
 6. Do not force-push or rewrite public history unless Yasir explicitly says force push and CEO confirms `SAFE TO FORCE PUSH: YES`.
 
+Do not ask Yasir separate approval questions for commit, push, merge, or deploy actions that are part of the approved safe release path. If rollback is needed after release, report the rollback path and wait for Yasir approval before destructive or production-impacting rollback actions.
+
 ## Netlify Rollback Reminder
 
 - If a release triggered Netlify production deploy, rollback may require Netlify access or a new revert commit.

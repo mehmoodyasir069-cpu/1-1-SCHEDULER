@@ -23,6 +23,7 @@ Store sanitized summaries only. Do not commit raw transcripts, secrets, tokens, 
 - Subagent threads used:
 - Push instruction detected:
 - Release command detected:
+- Separate approval questions asked:
 - Requested push target:
 - Branch before release:
 - Files changed:

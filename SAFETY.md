@@ -7,6 +7,7 @@ These rules apply to all Codex work in this repo.
 - Never work directly on `main` for feature work.
 - Default is no push, no merge, and no deploy.
 - Treat `push`, `push it`, `push now`, `push to main`, `send it live`, `release it`, or clear push/release approval as Safe Release Push Mode.
+- That one push/release command is approval for the full safe release pipeline; do not ask separate approval to commit, push, merge, or deploy.
 - Never push, merge, release, or deploy unless the full safe release pipeline passes.
 - Never push `main` unless CEO confirms `SAFE TO RELEASE TO MAIN: YES`.
 - Never deploy through Netlify unless CEO confirms `SAFE TO DEPLOY VIA NETLIFY: YES`.
@@ -51,9 +52,10 @@ High-risk work includes:
 
 - CEO approval is required before Developer Agent changes code.
 - Extra CEO approval is required for auth, payment, database, env, deployment, package, migration, seed, or production-impacting changes.
-- Yasir approval is required before push, merge, PR creation when requested as final action, or deploy.
+- Yasir approval is required before push, merge, PR creation when requested as final action, or deploy, and clear push/release wording counts as that approval for the full safe release pipeline.
 - A general `push` is a full safe release command to the normal release target, usually `main`.
 - `push this branch only` or `push feature branch only` limits action to that branch and forbids main merge or production deploy.
+- `do not deploy` allows commit/push/merge only if safe, but forbids deployment actions.
 - No agent can approve its own work.
 
 ## Safe Release Push Gates
@@ -64,9 +66,12 @@ Before any release push, CEO must verify correct project, branch, requested targ
 - `SAFE TO RELEASE TO MAIN: YES/NO`
 - `SAFE TO DEPLOY VIA NETLIFY: YES/NO`
 - `SAFE TO FORCE PUSH: YES/NO`
+- `SAFE TO RELEASE: YES/NO`
 - `SAFE TO RELEASE/PUSH: YES/NO`
 
 If any required gate is `NO`, do not push, merge, or deploy. CEO must explain why and what must be fixed first.
+
+If `SAFE TO RELEASE: YES` and `SAFE TO RELEASE/PUSH: YES`, Codex may commit completed work, push, update/merge main when it is the normal release path, allow connected deployment systems, and report deployment status without asking Yasir additional approval questions.
 
 ## Netlify Release Safety
 
@@ -83,6 +88,7 @@ If any required gate is `NO`, do not push, merge, or deploy. CEO must explain wh
 - Inspect `git diff` before final report.
 - Confirm whether auth, payments, database, env, deployment, production data, or `main` were touched.
 - For release pushes, include deployment status if tools/access are available.
+- Never bypass failed tests, failed build, branch protection, secrets protection, dirty unknown user changes, unsafe auth/payment/database/deploy risk, missing login/auth, remote rejection, or data-loss risk.
 
 ## Secrets And Environments
 

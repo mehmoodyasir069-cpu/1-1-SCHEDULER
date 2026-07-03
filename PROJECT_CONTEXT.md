@@ -97,4 +97,5 @@ Last operating-system update: 2026-07-03, Safe Release Push Mode added
 - First future task should start with CEO reading the operating-system files, checking git status, classifying risk, and routing work.
 - Main Codex chat should remain the command center and spawn/use `yasir-ceo` first.
 - Do not push/release unless Yasir gives clear push/release approval and Safe Release Push Mode gates pass.
+- Once Yasir gives clear push/release approval, do not ask separate approval questions for commit, push, merge, or deployment actions that are part of the normal safe release path.
 - If Netlify status cannot be checked during release, report `deployment verification blocked: Netlify access/status unavailable`.

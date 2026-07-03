@@ -1,6 +1,6 @@
 # Handover
 
-Last updated: 2026-07-03 02:45 BST
+Last updated: 2026-07-03 03:10 BST
 
 ## Current Machine And Session
 
@@ -13,7 +13,7 @@ Last updated: 2026-07-03 02:45 BST
 
 ## Latest Setup Action
 
-Yasir asked to update the Yasir CEO Agent System with Safe Release Push Mode.
+Yasir asked to fix Safe Release Push Mode so `push` is simple again: one clear push/release command means approval for the full safe release pipeline.
 
 This update changed documentation, workflow, and agent configuration files only. It did not change app code, package files, `.env` files, Netlify deployment, Convex production data, commits, pushes, merges, or deploys.
 
@@ -23,6 +23,7 @@ Core behavior now documented:
 - Spawn or use `yasir-ceo` first.
 - Route work to `debugger`, `developer`, `verifier`, and `auditor` subagent threads as needed.
 - `push`, `push it`, `push now`, `push to main`, `send it live`, `release it`, or clear push/release approval starts the full safe release pipeline.
+- Codex must not ask separate follow-up approval questions for commit, push, merge, or deploy after a clear push/release command.
 - Safe Release Push Mode may commit, push, update main, and allow Netlify deployment only after CEO gates pass.
 - `push this branch only` or `push feature branch only` remains branch-only and must not merge to main or deploy production.
 - Main pushes are production-impacting unless project context says otherwise.
@@ -59,6 +60,7 @@ Core behavior now documented:
 - Run `npm run lint` and `npm run build` when app code or build config changes.
 - For future push requests, run the push safety gate before any `git push`.
 - For future release/push requests, run Safe Release Push Mode and record Netlify deployment status or why it is blocked.
+- If `SAFE TO RELEASE: YES`, continue the release path without repeated approval questions.
 
 ## What Must Not Be Touched Without Explicit Yasir Approval
 

@@ -133,3 +133,18 @@ Use this file for sanitized CEO decisions. Do not include secrets, raw private t
 - Reason: The previous push-only gate was too narrow for Netlify-connected release behavior.
 - Procedural incident: Verifier subagent accidentally invoked a no-op `git push` while scanning. Git reported no changes to push. Local `HEAD`, `origin/main`, and remote `main` remained `30f234263e6e69b52ee2b6ded77571506943f11a`; no commit, merge, or deploy occurred.
 - Required follow-up: Await Yasir's separate release/push instruction and run Safe Release Push Mode.
+
+## 2026-07-03 - Push Is Full Pipeline Approval
+
+- Decision owner: Yasir CEO Agent
+- Decision type: approve setup / no release action
+- Task: Make `push` simple again so Yasir does not need to approve commit, push, merge, and deploy separately.
+- Context: Yasir requested OS-file updates only and explicitly said not to change app code, push, or deploy during this rule update.
+- Risk level: low for docs/config setup; high for future release actions with failing checks, main/Netlify release, force push, secrets, dirty unknown user changes, or unsafe auth/payment/database/deploy risk.
+- Evidence reviewed:
+  - branch: `main`, ahead of `origin/main` by one existing CEO-agent-system commit
+  - dirty state before update: untracked `.codex/config.toml.broken-*` backup files only
+  - requested rule: clear push/release approval means full safe release pipeline with no repeated approval questions
+- Decision: Update operating-system files so `push` runs the internal safe release pipeline; do not ask separate commit/push/merge/deploy approval after `SAFE TO RELEASE: YES`.
+- Reason: Yasir's push command should authorize the normal release path while safety gates still block unsafe releases.
+- Required follow-up: Validate wording and await future push/release command.

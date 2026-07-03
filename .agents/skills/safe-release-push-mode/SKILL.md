@@ -19,6 +19,8 @@ Use this skill when Yasir gives clear push or release approval.
 
 Do not treat these as a simple `git push`. Treat them as one full safe release command.
 
+That command is already Yasir's approval for commit, push, merge/update main, and deployment actions that belong to the normal safe release path. Do not ask separate approval questions after the required gates pass.
+
 ## Pipeline
 
 1. CEO starts first and reads required OS files.
@@ -37,9 +39,9 @@ Do not treat these as a simple `git push`. Treat them as one full safe release c
 6. Developer is the only role allowed to change code.
 7. Verifier checks again.
 8. Auditor updates logs, handover, decisions, and release checklist.
-9. CEO decides `SAFE TO RELEASE/PUSH: YES/NO`.
-10. If `YES`, Codex may perform only the approved release actions.
-11. If `NO`, Codex stops and reports why.
+9. CEO decides `SAFE TO RELEASE: YES/NO` and `SAFE TO RELEASE/PUSH: YES/NO`.
+10. If `YES`, Codex may perform only the approved release actions without asking Yasir separate commit, push, merge, or deploy questions.
+11. If `NO`, Codex must not commit, push, merge, update main, or deploy; it stops and reports why.
 
 ## Default Meaning
 
@@ -68,6 +70,8 @@ If Yasir names a branch, CEO verifies the requested branch before pushing.
 - allow connected deployment such as Netlify to trigger
 - check/report deployment status if tools/access are available
 
+If Yasir says `do not deploy`, do not allow deployment actions even if commit, push, or merge are otherwise safe.
+
 ## Never Bypass
 
 - failed tests
@@ -90,9 +94,12 @@ Write these gates in the CEO report:
 - `SAFE TO RELEASE TO MAIN: YES/NO`
 - `SAFE TO DEPLOY VIA NETLIFY: YES/NO`
 - `SAFE TO FORCE PUSH: YES/NO`
+- `SAFE TO RELEASE: YES/NO`
 - `SAFE TO RELEASE/PUSH: YES/NO`
 
 If any required gate is `NO`, do not push, merge, update main, or deploy. Explain the blocker and next safe fix.
+
+Do not ask Yasir to approve bypassing failed tests, failed build, branch protection, secrets protection, dirty unknown user changes, unsafe auth/payment/database/deploy risk, missing login/auth, remote rejection, or data-loss risk.
 
 ## Netlify
 

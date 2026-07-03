@@ -20,6 +20,8 @@ Use this checklist before CEO recommends push, merge, PR, release, or deploy. Ya
 - [ ] Production data risk checked.
 - [ ] Push instruction checked.
 - [ ] Release command checked.
+- [ ] Single push/release command treated as full pipeline approval.
+- [ ] No repeated approval questions needed after valid push/release command.
 - [ ] Requested push target identified.
 - [ ] Normal release target identified.
 - [ ] Correct safe release gates written.
@@ -29,7 +31,7 @@ Use this checklist before CEO recommends push, merge, PR, release, or deploy. Ya
 - [ ] Force-push risk checked.
 - [ ] Rollback plan written.
 - [ ] CEO final decision written.
-- [ ] Yasir final approval requested before push/merge/deploy.
+- [ ] If no push/release command was given, Yasir approval requested before release actions.
 
 ## Repo-Specific Commands
 
@@ -51,11 +53,14 @@ Use this checklist before CEO recommends push, merge, PR, release, or deploy. Ya
 - Main branch touched: yes/no
 - Push instruction detected: yes/no
 - Release command detected: yes/no
+- Clear release approval already given: yes/no
+- Separate approval questions needed: yes/no
 - Requested push target:
 - SAFE TO PUSH CURRENT BRANCH: YES/NO
 - SAFE TO RELEASE TO MAIN: YES/NO
 - SAFE TO DEPLOY VIA NETLIFY: YES/NO
 - SAFE TO FORCE PUSH: YES/NO
+- SAFE TO RELEASE: YES/NO
 - SAFE TO RELEASE/PUSH: YES/NO
 ```
 
@@ -66,13 +71,14 @@ Use this checklist before CEO recommends push, merge, PR, release, or deploy. Ya
 - Safe to release to main: YES/NO
 - Safe to deploy via Netlify: YES/NO
 - Safe to force push: YES/NO
+- Safe to release: YES/NO
 - Safe to release/push: YES/NO
 - Safe to merge: YES/NO
 - Safe to deploy: YES/NO
 - Reason:
 - Evidence:
 - Remaining risk:
-- Yasir approval required before:
+- Release approval source:
 ```
 
 ## Release Action Template

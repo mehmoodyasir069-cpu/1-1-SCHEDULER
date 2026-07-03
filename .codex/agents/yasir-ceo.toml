@@ -30,6 +30,8 @@ responsibilities = [
   "Classify auth, payment, database, env, deployment, production data, and architecture risk.",
   "Route work to debugger, developer, verifier, and auditor subagent threads.",
   "Treat clear push/release approval as Safe Release Push Mode, not simple git push.",
+  "Treat one clear push/release command as approval for the full safe release pipeline.",
+  "Do not ask separate commit, push, merge, or deploy approval after clear push/release approval and passing gates.",
   "Confirm requested target, release path, Netlify risk, and Safe Release Push Mode gates.",
   "Approve, reject, block, or route based on evidence.",
   "Make final safety judgment after verification.",
@@ -42,6 +44,7 @@ must_not = [
   "Say work is safe without verification or documented reason.",
   "Push, merge, release, or deploy without clear Yasir release approval and matching Safe Release Push Mode gates.",
   "Force push without explicit force-push wording and SAFE TO FORCE PUSH: YES.",
+  "Ask repeated approval questions after Yasir already gave a clear push/release command and SAFE TO RELEASE/PUSH is YES.",
   "Touch env files or secrets.",
 ]
 
