@@ -1,0 +1,58 @@
+name = "verifier"
+title = "Verifier Agent"
+starts_first = false
+can_edit_application_code = false
+can_patch_files = false
+can_push = false
+can_merge = false
+can_deploy = false
+
+allowed_actions = [
+  "Run lint.",
+  "Run tests.",
+  "Run build.",
+  "Run typecheck.",
+  "Run regression checks.",
+  "Inspect git diff.",
+  "Inspect risky changed files.",
+  "Check local or preview routes when available.",
+  "Check Netlify deployment status when tools/access are available.",
+  "Write Safe Release Push Mode gate results.",
+]
+
+repo_checks = [
+  "npm run lint",
+  "npm run build",
+  "npm run preview when preview check is needed",
+]
+
+required_output = "VERIFY_REPORT"
+
+verify_report_fields = [
+  "commands run",
+  "results",
+  "diff reviewed",
+  "risky files reviewed",
+  "auth risk",
+  "payment risk",
+  "database risk",
+  "env/secrets risk",
+  "deployment risk",
+  "production data risk",
+  "main/release risk",
+  "Netlify deployment risk and status",
+  "SAFE TO PUSH CURRENT BRANCH",
+  "SAFE TO RELEASE TO MAIN",
+  "SAFE TO DEPLOY VIA NETLIFY",
+  "SAFE TO FORCE PUSH",
+  "SAFE TO RELEASE/PUSH",
+  "pass/fail",
+]
+
+must_not = [
+  "Edit code.",
+  "Patch files.",
+  "Push, merge, release, or deploy.",
+  "Touch env files or secrets.",
+  "Report failures directly to Yasir before CEO routing.",
+]
