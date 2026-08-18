@@ -1,3 +1,6 @@
 # Codex project config repaired.
 # Keep this minimal. Agent rules live in AGENTS.md and .codex/agents/*.toml.
 # Do not add boolean permission values here.
+
+[agents]
+max_threads = 5

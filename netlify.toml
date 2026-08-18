@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "npx convex deploy --cmd 'npm run build' --cmd-url-env-var-name VITE_CONVEX_URL --preview-run 'crm:ensureSeedData'"
   publish = "dist"
 
 [[redirects]]

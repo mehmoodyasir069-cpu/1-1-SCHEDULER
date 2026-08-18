@@ -1,15 +1,15 @@
 # Project Context
 
-Last inspected: 2026-07-03 02:04 BST
-Last operating-system update: 2026-07-03, Safe Release Push Mode added
+Last inspected: 2026-08-18
+Last operating-system update: 2026-08-18, Netlify/Convex release-context audit recorded
 
 ## Identity
 
 - Project: Elevate Commerce - 1-1 Mentorship CRM
 - Repository: `https://github.com/mehmoodyasir069-cpu/1-1-SCHEDULER.git`
-- Current branch: `main`
-- Current commit: `30f2342`
-- Current git status at inspection: clean, tracking `origin/main`
+- Current branch: `codex/scheduling-lifecycle`
+- Current git status at inspection: uncommitted scheduling, release-preparation, Codex-agent configuration, and repo-memory changes on `codex/scheduling-lifecycle`; nothing staged
+- Known `.codex/config.toml.broken-*` backups are ignored and remain untouched
 - Machine detected: `rajas-MacBook-Neo.local`
 - OS detected: macOS Darwin arm64
 
@@ -49,14 +49,18 @@ Last operating-system update: 2026-07-03, Safe Release Push Mode added
 ## Deployment
 
 - Netlify config: `netlify.toml`
-- Build command: `npm run build`
+- Build command: Netlify invokes Convex deployment and then `npm run build` against the selected deployment URL
 - Publish directory: `dist`
 - SPA fallback: all routes redirect to `/index.html`
-- Release assumption: `main` is treated as production-impacting unless a future verified Netlify/GitHub setup says otherwise
-- Safe Release Push Mode note: pushing `main` may trigger production deploy; feature branch pushes may trigger preview deploys
-- README lists Netlify env vars:
-  - `VITE_CONVEX_URL`
-  - `VITE_CONVEX_SITE_URL`
+- Verified Netlify site: `elevate-commerce-1-1-scheduler`, site ID `5dc7fddc-90db-4983-9bb9-ec5259f2f6c6`
+- Verified Netlify URL: `https://elevate-commerce-1-1-scheduler.netlify.app`
+- Production branch: `main`
+- Release assumption: `main` is production-impacting
+- Safe Release Push Mode note: pushing `main` may trigger production deploy; feature branch preview deploys are not available because the Netlify allowed branches list includes only `main`
+- Netlify production context has `CONVEX_DEPLOY_KEY` present by key-name probe only; the value was not printed, opened, copied, or retained
+- Convex local CLI user login remains anonymous/unavailable, so local direct Convex deploy dry-run is blocked; Netlify production deploy can use its configured key
+- Netlify preview deployments may run `crm:ensureSeedData` through `--preview-run` when branch deploys are available; branch deploys are currently unavailable because only `main` is allowed
+- Browser automatic seeding is guarded by `import.meta.env.DEV`, so production and preview browser bundles do not auto-seed
 
 ## Data Model And Backend
 
@@ -69,6 +73,21 @@ Last operating-system update: 2026-07-03, Safe Release Push Mode added
 - App uses `ConvexProvider` in `src/main.tsx`.
 - README says student, session, and fee data live in Convex, not local storage.
 - README says seed mutation is idempotent for the current seeded students.
+
+## Scheduling And Notes Capabilities
+
+- Sessions support validated add, view, edit, complete, cancel, postpone, and guarded permanent deletion.
+- Completion updates the session and optional linked completion note atomically.
+- Sessions with linked notes cannot be permanently deleted or reassigned to another student.
+- General and session notes support add, view, edit, and delete workflows.
+- Archived sessions are retained as history and are read-only.
+- Upcoming lists exclude past scheduled sessions while history remains available.
+
+## External Calendar Scope
+
+- Google Calendar and ICS work was intentionally removed from the release candidate at Yasir's request.
+- The current source has no external-calendar export, event-link, file-download, OAuth, or synchronization implementation.
+- Internal scheduling input and display continue to use the browser/device timezone.
 
 ## Risky Files And Areas
 
@@ -92,8 +111,13 @@ Last operating-system update: 2026-07-03, Safe Release Push Mode added
 
 ## Current Safe Next Step
 
-- Keep this setup as documentation/config only.
-- For future feature work, create a feature/hotfix branch before editing app code.
+- Keep the scheduling work on `codex/scheduling-lifecycle` until release readiness is established.
+- Browser/cloud verification remains blocked until a real deployed production candidate is created and checked; branch preview QA is unavailable because Netlify allows only `main`.
+- Local static checks passed: lint, isolated production build/typecheck, static route checks, stale-source scan, and `git diff --check`.
+- Netlify CLI is logged in and this folder is linked to the existing production site. The production Convex deploy key exists in Netlify by name-only verification.
+- Local direct Convex deploy dry-run remains blocked because the Convex CLI login is anonymous/unavailable in this checkout; production deployment should run through Netlify using its configured key.
+- Treat authentication, schema/index work, and business-timezone persistence as separate high-risk phases.
+- No commit, push, merge, production-data access, or deployment has occurred for this release candidate.
 - First future task should start with CEO reading the operating-system files, checking git status, classifying risk, and routing work.
 - Main Codex chat should remain the command center and spawn/use `yasir-ceo` first.
 - Do not push/release unless Yasir gives clear push/release approval and Safe Release Push Mode gates pass.

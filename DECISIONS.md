@@ -148,3 +148,22 @@ Use this file for sanitized CEO decisions. Do not include secrets, raw private t
 - Decision: Update operating-system files so `push` runs the internal safe release pipeline; do not ask separate commit/push/merge/deploy approval after `SAFE TO RELEASE: YES`.
 - Reason: Yasir's push command should authorize the normal release path while safety gates still block unsafe releases.
 - Required follow-up: Validate wording and await future push/release command.
+
+## 2026-08-18 - Scheduling Lifecycle Release Preparation
+
+- Decision owner: Yasir CEO Agent
+- Decision type: approve local work / block release
+- Task: Complete scheduling and session-note workflows, remove external-calendar work, verify, and deploy when safe.
+- Context: The scheduling lifecycle was hardened locally. Yasir then directed removal of Google Calendar and ICS work. Release preparation added a coordinated Convex/Netlify build path and disabled production browser auto-seeding.
+- Risk level: medium for local lifecycle changes; high and pending for production Convex and Netlify deployment.
+- Evidence reviewed:
+  - branch: `codex/scheduling-lifecycle`
+  - git status: uncommitted scheduling, release-preparation, Codex configuration, and repo-memory changes; nothing staged; known ignored backups untouched
+  - files/diff: current implementation is `src/App.tsx`, `convex/crm.ts`, and `src/lib/crm-data.ts`; release preparation also changes `netlify.toml`, `README.md`, `.gitignore`, `.codex/config.toml`, and `.codex/agents/*.toml`
+  - checks: lint, isolated production build/typecheck, static route check, static lifecycle review, stale-source scan, and `git diff --check` passed
+  - deployment context: Netlify CLI is logged in and the folder is linked to site `elevate-commerce-1-1-scheduler`, site ID `5dc7fddc-90db-4983-9bb9-ec5259f2f6c6`, with production branch `main`
+  - env/key evidence: `CONVEX_DEPLOY_KEY` is present in the Netlify production context by key-name-only probe; no value was printed, opened, copied, or retained
+  - remaining blocker: local direct Convex deploy dry-run is blocked because the Convex CLI user login remains anonymous/unavailable; branch-preview deploy QA is unavailable because Netlify allows only `main`
+- Decision: Approve the local scheduling lifecycle candidate and intentional removal of all Google Calendar and ICS functionality. Keep internal scheduling, completion, cancellation, postponement, history, and note protection. Continue release only through Safe Release Push Mode and the verified Netlify production path when gates pass.
+- Reason: Static evidence supports the local implementation, and Netlify production linkage/key-name evidence is now verified. Production safety still requires commit/push/deploy and post-deploy status/browser verification.
+- Required follow-up: Rerun release gates, commit/push/update `main` only if CEO marks required gates YES, let Netlify deploy using its configured production Convex key, then record deployment and browser evidence. No push, merge, production-data access, or deployment has occurred.

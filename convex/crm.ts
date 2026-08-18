@@ -48,6 +48,41 @@ function normalizeLeadSource(value: string | null | undefined) {
   return normalizeText(value);
 }
 
+function appendSessionAudit(note: string | null, auditLine: string) {
+  const existing = normalizeText(note);
+  return existing ? `${existing}\n\n${auditLine}` : auditLine;
+}
+
+function validateSessionTimestamp(value: number, errorMessage: string) {
+  if (!Number.isFinite(value) || !Number.isFinite(new Date(value).getTime())) {
+    throw new Error(errorMessage);
+  }
+}
+
+function validateSessionWindow(startAt: number, durationMinutes: number) {
+  validateSessionTimestamp(startAt, "Choose a valid session date and time.");
+  if (
+    !Number.isInteger(durationMinutes) ||
+    durationMinutes < 15 ||
+    durationMinutes > 480
+  ) {
+    throw new Error(
+      "Session duration must be a whole number from 15 to 480 minutes.",
+    );
+  }
+
+  const endAt = startAt + durationMinutes * 60 * 1000;
+  validateSessionTimestamp(
+    endAt,
+    "The session end time must be a valid date and time.",
+  );
+  if (endAt <= startAt) {
+    throw new Error("The session end time must be after its start time.");
+  }
+
+  return endAt;
+}
+
 async function getStudentMap(ctx: any): Promise<Map<string, any>> {
   const students: any[] = await ctx.db
     .query("students")
@@ -421,7 +456,7 @@ export const scheduleSession = mutation({
       throw new Error("Student not found.");
     }
 
-    const endAt = args.startAt + args.durationMinutes * 60 * 1000;
+    const endAt = validateSessionWindow(args.startAt, args.durationMinutes);
     await ensureSessionSlotIsAvailable(ctx, args.startAt, endAt);
 
     const now = Date.now();
@@ -550,6 +585,7 @@ export const deleteStudentNote = mutation({
   },
 });
 
+// Temporary compatibility path for the currently deployed frontend.
 export const setSessionStatus = mutation({
   args: {
     sessionId: v.id("sessions"),
@@ -566,12 +602,92 @@ export const setSessionStatus = mutation({
     if (!session) {
       throw new Error("Session not found.");
     }
+    if (session.status !== "scheduled") {
+      throw new Error("Only scheduled sessions can be completed or canceled.");
+    }
+    if (args.status !== "done" && args.status !== "canceled") {
+      throw new Error(
+        "Legacy status updates can only complete or cancel a scheduled session.",
+      );
+    }
 
     await ctx.db.patch(args.sessionId, {
       status: args.status,
       note: args.note ?? session.note,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const completeSession = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    noteTitle: v.union(v.string(), v.null()),
+    noteContent: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found.");
+    }
+    if (session.status !== "scheduled") {
+      throw new Error("Only scheduled sessions can be completed.");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.sessionId, {
+      status: "done",
+      note: appendSessionAudit(
+        session.note,
+        `Completed at ${new Date(now).toISOString()}.`,
+      ),
+      updatedAt: now,
+    });
+
+    const title = normalizeOptionalText(args.noteTitle);
+    const content = normalizeOptionalText(args.noteContent);
+    if (title || content) {
+      await ctx.db.insert("studentNotes", {
+        studentId: session.studentId,
+        sessionId: session._id,
+        type: "session",
+        title,
+        content: content ?? title ?? "Session completed.",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return args.sessionId;
+  },
+});
+
+export const cancelSession = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    reason: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found.");
+    }
+    if (session.status !== "scheduled") {
+      throw new Error("Only scheduled sessions can be canceled.");
+    }
+
+    const now = Date.now();
+    const reason = normalizeOptionalText(args.reason);
+    const auditLine = `Canceled at ${new Date(now).toISOString()}${
+      reason ? `. Reason: ${reason}` : "."
+    }`;
+    await ctx.db.patch(args.sessionId, {
+      status: "canceled",
+      note: appendSessionAudit(session.note, auditLine),
+      updatedAt: now,
+    });
+
+    return args.sessionId;
   },
 });
 
@@ -591,14 +707,24 @@ export const postponeSession = mutation({
     if (session.status !== "scheduled") {
       throw new Error("Only scheduled sessions can be postponed.");
     }
+    if (args.startAt === session.startAt) {
+      throw new Error("Choose a different date or time for the replacement session.");
+    }
 
-    const endAt = args.startAt + args.durationMinutes * 60 * 1000;
+    const endAt = validateSessionWindow(args.startAt, args.durationMinutes);
     await ensureSessionSlotIsAvailable(ctx, args.startAt, endAt, args.sessionId);
 
     const now = Date.now();
+    const reason = normalizeOptionalText(args.note);
+    const auditLine = `Postponed at ${new Date(now).toISOString()} from ${new Date(
+      session.startAt,
+    ).toISOString()} to ${new Date(args.startAt).toISOString()}${
+      reason ? `. Reason: ${reason}` : "."
+    }`;
+    const auditedNote = appendSessionAudit(session.note, auditLine);
     await ctx.db.patch(args.sessionId, {
       status: "postponed",
-      note: args.note ?? session.note,
+      note: auditedNote,
       updatedAt: now,
     });
 
@@ -609,7 +735,7 @@ export const postponeSession = mutation({
       endAt,
       durationMinutes: args.durationMinutes,
       status: "scheduled",
-      note: args.note,
+      note: auditedNote,
       createdAt: now,
       updatedAt: now,
     });
@@ -639,7 +765,20 @@ export const updateSession = mutation({
       throw new Error("Student not found.");
     }
 
-    const endAt = args.startAt + args.durationMinutes * 60 * 1000;
+    if (String(session.studentId) !== String(args.studentId)) {
+      const notes = await ctx.db.query("studentNotes").collect();
+      const linkedNote = notes.find(
+        (note) =>
+          note.sessionId && String(note.sessionId) === String(args.sessionId),
+      );
+      if (linkedNote) {
+        throw new Error(
+          "This session has linked notes. Delete or move those notes before changing the student.",
+        );
+      }
+    }
+
+    const endAt = validateSessionWindow(args.startAt, args.durationMinutes);
     await ensureSessionSlotIsAvailable(ctx, args.startAt, endAt, args.sessionId);
 
     await ctx.db.patch(args.sessionId, {
@@ -668,6 +807,17 @@ export const deleteSession = mutation({
 
     if (session.status !== "scheduled") {
       throw new Error("Only scheduled sessions can be removed.");
+    }
+
+    const notes = await ctx.db.query("studentNotes").collect();
+    const linkedNote = notes.find(
+      (note) =>
+        note.sessionId && String(note.sessionId) === String(args.sessionId),
+    );
+    if (linkedNote) {
+      throw new Error(
+        "This session has linked notes and cannot be permanently deleted. Cancel it to preserve the history, or delete the linked notes first.",
+      );
     }
 
     await ctx.db.delete(args.sessionId);

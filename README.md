@@ -16,11 +16,9 @@ npm install
 npm run dev
 ```
 
-The app is linked to the isolated Convex deployment created for this repo:
-
-- Project: `1-1-scheduler-1abee`
-- Deployment: `watchful-buffalo-826`
-- Cloud URL: `https://watchful-buffalo-826.eu-west-1.convex.cloud`
+Local development requires a Convex development deployment configured through
+the normal Convex CLI workflow. Keep deployment credentials and generated
+environment values out of source control.
 
 ## Build
 
@@ -30,12 +28,27 @@ npm run build
 
 ## Netlify
 
-Set these environment variables in Netlify:
+The Netlify build runs the Convex deployment first and runs `npm run build`
+against the backend URL returned by Convex. Configure these variable names
+directly in Netlify:
 
-- `VITE_CONVEX_URL=https://watchful-buffalo-826.eu-west-1.convex.cloud`
-- `VITE_CONVEX_SITE_URL=https://watchful-buffalo-826.eu-west-1.convex.site`
+- `CONVEX_DEPLOY_KEY`
+- `VITE_CONVEX_URL`
 
-The repo already includes `netlify.toml` so Netlify can publish `dist/` and route all paths to `index.html`.
+Use a production `CONVEX_DEPLOY_KEY` only in Netlify's Production context. Use
+a preview deploy key in the Deploy Preview and branch-deploy contexts. Configure
+the keys directly in those Netlify contexts; never commit their values.
+
+The release pipeline is:
+
+1. Netlify invokes `npx convex deploy` from `netlify.toml`.
+2. Convex deploys backend functions for the selected Netlify context.
+3. Convex runs `npm run build` with `VITE_CONVEX_URL` set for that deployment.
+4. Netlify publishes `dist/` and applies the SPA route fallback.
+
+Preview builds may run `crm:ensureSeedData` through the configured preview
+deployment. Production builds do not run the preview seed command, and the
+browser only attempts automatic seeding in development mode.
 
 ## Data safety
 

@@ -41,6 +41,38 @@ Use this checklist before CEO recommends push, merge, PR, release, or deploy. Ya
 - Preview built app: `npm run preview`
 - Tests: no `test` script detected in `package.json`
 
+## Scheduling Lifecycle Verification - 2026-08-18
+
+This records feature verification only. It is not a release approval, and the feature must not be marked released.
+
+- [x] Branch confirmed as `codex/scheduling-lifecycle`.
+- [x] Git status checked; scheduling, release-preparation, Codex configuration, and repo-memory changes are uncommitted and nothing is staged.
+- [x] Known `.codex/config.toml.broken-*` backups remain ignored and untouched.
+- [x] Complete feature and `origin/main` release delta reviewed.
+- [x] `npm run lint` passed.
+- [x] Isolated production `npm run build` passed; typecheck covered by lint/build.
+- [x] Focused date, duration, overlap, lifecycle, linked-note, and legacy-mutation review passed.
+- [x] Static Schedule, Session Log, Student Profile, internal calendar, and responsive review passed.
+- [x] Google Calendar and ICS work confirmed intentionally removed; no external-calendar implementation remains.
+- [x] `git diff --check` passed.
+- [x] No schema, generated API, package, lockfile, env-value, payment-calculation, auth, or production-data changes found.
+- [x] Browser automatic seeding confirmed development-only.
+- [x] Netlify preview seeding is configured through `--preview-run`; production browser auto-seeding is disabled.
+- [x] Dedicated automated test script documented as unavailable.
+- [x] `codex-cli 0.142.5` successfully loads the repo agent configuration with `[agents] max_threads = 5`.
+- [x] Netlify CLI login and local folder linkage verified for site `elevate-commerce-1-1-scheduler`, site ID `5dc7fddc-90db-4983-9bb9-ec5259f2f6c6`.
+- [x] Netlify production branch verified as `main`.
+- [x] Netlify production `CONVEX_DEPLOY_KEY` presence verified by key-name-only probe; no value was printed, opened, copied, or retained.
+- [x] Branch-preview deploy availability checked; unavailable because the Netlify allowed branches list includes only `main`.
+- [ ] Browser/live Convex testing completed. Pending until a deployed production candidate exists.
+- [ ] Convex cloud deploy dry-run passed. Local direct dry-run remains blocked because the Convex CLI user login is anonymous/unavailable; Netlify production deploy can use its configured key.
+- [ ] Netlify production deployment status verified for this release candidate. Pending because no commit, push, or deploy has occurred.
+- [ ] Production behavior verified.
+- [x] Push/release approval received from Yasir.
+- [ ] Released or deployed.
+
+Current release judgment: local static verification, Codex configuration compatibility, Netlify folder linkage, production branch, and production Convex key-name presence passed. Local direct Convex dry-run remains blocked by anonymous/unavailable Convex CLI login, branch-preview QA is unavailable because only `main` is allowed, and production deploy/browser verification is pending. Nothing has been committed, pushed, merged, deployed, or run against production data.
+
 ## Risk Review Template
 
 ```markdown

@@ -1,17 +1,72 @@
 # Handover
 
-Last updated: 2026-07-03 03:10 BST
+Last updated: 2026-08-18
 
 ## Current Machine And Session
 
 - Machine detected: `rajas-MacBook-Neo.local`
 - OS detected: macOS Darwin arm64
 - Session type: Codex desktop workspace
-- Current branch: `main`
-- Current git status before setup: clean, tracking `origin/main`
-- Current commit before setup: `30f2342`
+- Current branch: `codex/scheduling-lifecycle`
+- Current HEAD: `6c298c1`; remote `origin/main`: `30f2342`
+- Current git status: uncommitted tracked changes in the scheduling implementation, Netlify/README release preparation, Codex agent configuration, `.gitignore`, and the seven repo-memory documents; nothing staged
+- Known `.codex/config.toml.broken-*` backups are ignored and remain untouched
+- Commit/push/release state: feature changes are uncommitted and have not been pushed, merged, released, or deployed
 
-## Latest Setup Action
+## Latest Feature Action
+
+Yasir asked for a complete scheduling and session-note workflow, then directed that all Google Calendar and ICS work be removed while the remaining work was prepared for release.
+
+The feature branch now supports validated add, view, edit, complete, cancel, postpone, and guarded permanent deletion. Completion is atomic with an optional linked note. Sessions with linked notes cannot be permanently deleted or reassigned to another student. General and session note creation, viewing, editing, and deletion remain available. Archived sessions are read-only.
+
+Google Calendar and ICS work was intentionally removed. The current release candidate has no external-calendar export or synchronization functionality. The internal scheduler continues to display device-local time.
+
+The first verification failed on representable Date-range validation and postpone-dialog draft reset. The developer fixed only `src/App.tsx` and `convex/crm.ts`; final verification passed.
+
+## Current Changed Files
+
+- Application behavior:
+- `src/App.tsx`
+- `convex/crm.ts`
+- `src/lib/crm-data.ts`
+- Release preparation: `netlify.toml`, `README.md`, `.gitignore`
+- Codex configuration: `.codex/config.toml`, `.codex/agents/*.toml`
+- Repo memory: `PROJECT_CONTEXT.md`, `HANDOVER.md`, `TASK_LOG.md`, `DECISIONS.md`, `RELEASE_CHECKLIST.md`, `ROLLBACK.md`, `docs/risk-register.md`
+
+`src/lib/calendar-export.ts` is absent and is not part of the release candidate.
+
+## Verification
+
+- `npm run lint`: passed
+- Isolated production `npm run build`: passed
+- TypeScript: passed through lint/build
+- Focused date, duration, overlap, lifecycle, note-integrity, and legacy-mutation review: passed
+- Static lifecycle, internal schedule, and responsive review: passed
+- `git diff --check`: passed
+- External-calendar stale-source scan: no implementation remnants found
+- Dedicated automated test script: unavailable
+- Static route check: `/` and `/schedule` returned `200`
+- Netlify CLI/site linkage: verified. This folder is linked to existing site `elevate-commerce-1-1-scheduler`, site ID `5dc7fddc-90db-4983-9bb9-ec5259f2f6c6`, with production branch `main`
+- Netlify production Convex key presence: verified by key-name probe for `CONVEX_DEPLOY_KEY`; no value was printed, opened, copied, or retained
+- Convex local direct deploy dry-run: blocked because the local Convex CLI user login remains anonymous/unavailable
+- Netlify production deployment path: can use the configured production `CONVEX_DEPLOY_KEY`, but release is still pending because no commit, push, deploy, or post-deploy browser verification has occurred
+- `codex-cli 0.142.5` successfully loads the repo agent configuration with `[agents] max_threads = 5`
+
+## Residual Risks
+
+- No authentication or authorization layer exists.
+- Linked-note protection uses full-table checks because no schema/index change was approved.
+- Postponed sessions do not have a durable predecessor/successor relationship in the schema.
+- Scheduling and display use the browser/device timezone rather than a stored business timezone.
+- Browser and live Convex behavior still require deployed production-candidate QA.
+- Feature-branch preview/branch deploy QA is unavailable because the Netlify allowed branches list includes only `main`.
+- Local direct Convex deployment remains unavailable from this checkout, so Convex deployment should be exercised through Netlify's configured production context.
+
+## Next Action
+
+Proceed through Safe Release Push Mode when CEO/verifier gates are ready: commit the release candidate, push/update `main`, let Netlify run the Convex-backed production build with its configured key, then verify deployment status and browser behavior. Yasir has given release intent, but the release is still pending. No push, merge, production-data access, or deployment has occurred.
+
+## Previous Setup Action
 
 Yasir asked to fix Safe Release Push Mode so `push` is simple again: one clear push/release command means approval for the full safe release pipeline.
 

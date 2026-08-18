@@ -1,12 +1,13 @@
 # Risk Register
 
-Last reviewed: 2026-07-03
+Last reviewed: 2026-08-18
 
 ## Auth Risks
 
 - No active auth workflow was detected, but Convex supports auth and generated docs include auth guidance.
 - Adding auth later can affect all user access and data visibility.
 - Any auth change requires extra CEO approval and verification of authenticated and unauthenticated flows.
+- The scheduling app currently has no authentication or ownership boundary, so access to student and session data is not user-scoped.
 
 ## Payment And Fee Risks
 
@@ -21,13 +22,24 @@ Last reviewed: 2026-07-03
 - Schema, query, mutation, seed, backup, export, and generated API changes can affect real data.
 - Never run production mutations, migrations, deletes, seed resets, or bulk updates without Yasir approval.
 - Local Convex state may differ from production Convex state.
+- Linked-note protection currently performs full-table checks because no session-note index/schema change was approved. This may become slow as data grows.
+- Postponement preserves history but has no durable predecessor/successor relationship in the schema, limiting chain tracing.
 
 ## Deployment Risks
 
-- Netlify deploy config uses `npm run build` and publishes `dist`.
-- Netlify environment variables point frontend builds at Convex.
+- Netlify deploy config invokes Convex deployment, runs `npm run build` against the selected backend URL, and publishes `dist`.
+- Netlify CLI is logged in and this folder is linked to site `elevate-commerce-1-1-scheduler`, site ID `5dc7fddc-90db-4983-9bb9-ec5259f2f6c6`; production branch is `main`.
+- Netlify production context has `CONVEX_DEPLOY_KEY` present by key-name-only probe; no value was printed, opened, copied, or retained.
+- Convex local direct deploy dry-run remains blocked because the local Convex CLI user login is anonymous/unavailable. Netlify production deploy can use its configured key.
 - A deploy can publish broken UI, wrong Convex URLs, or stale build output.
 - No deploy without Yasir approval.
+- Browser automatic seeding is development-only. Netlify `--preview-run` may seed a preview deployment; production browser auto-seeding is disabled.
+- Browser/live Convex verification remains pending until a production candidate is deployed and checked.
+
+## Scheduling Timezone And External Calendar Scope
+
+- Google Calendar and ICS work was intentionally removed; the release candidate has no external-calendar export or synchronization implementation.
+- Session input and display use the browser/device timezone. Users in different timezones or across DST boundaries may see unexpected wall-clock times without a stored business timezone.
 
 ## Push, Merge, And Main Branch Risks
 
@@ -42,8 +54,9 @@ Last reviewed: 2026-07-03
 ## Netlify Release Risks
 
 - Pushing `main` may trigger production deploy.
-- Pushing feature branches may trigger preview deploys.
-- Deployment status may be unavailable from local tools; if so, report `deployment verification blocked: Netlify access/status unavailable`.
+- Pushing feature branches does not currently provide preview deploy QA because the Netlify allowed branches list includes only `main`.
+- Preview-only seeding depends on correctly isolated Netlify and Convex contexts; branch previews are unavailable unless Netlify branch-deploy settings change.
+- Deployment status should be checked through the linked Netlify site after production deploy.
 - Main pushes are production-impacting unless verified project docs say otherwise.
 
 ## Subagent Coordination Risks

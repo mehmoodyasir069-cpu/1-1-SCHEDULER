@@ -193,7 +193,42 @@ export const feeSeedData: SeedFeeAccount[] = [
 ];
 
 export function parseLocalDateTime(date: string, time: string) {
-  return new Date(`${date}T${time}:00`).getTime();
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+
+  if (!dateMatch || !timeMatch) {
+    throw new Error("Choose a valid date and time.");
+  }
+
+  const [, yearValue, monthValue, dayValue] = dateMatch;
+  const [, hourValue, minuteValue] = timeMatch;
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
+
+  if (
+    !Number.isFinite(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day ||
+    parsed.getHours() !== hour ||
+    parsed.getMinutes() !== minute
+  ) {
+    throw new Error("That local date and time does not exist in this timezone.");
+  }
+
+  return parsed.getTime();
+}
+
+export function parseSessionDuration(value: string | number) {
+  const duration = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(duration) || duration < 15 || duration > 480) {
+    throw new Error("Session duration must be a whole number from 15 to 480 minutes.");
+  }
+  return duration;
 }
 
 export function formatCurrency(amount: number) {

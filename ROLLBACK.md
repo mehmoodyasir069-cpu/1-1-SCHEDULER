@@ -51,6 +51,30 @@ If the repo has no test script, document that gap.
 - Never mutate production data as part of rollback unless Yasir approves the exact operation and recovery path.
 - Document the rollback plan in `DECISIONS.md`, `TASK_LOG.md`, and `HANDOVER.md`.
 
+## Scheduling Lifecycle Feature Rollback
+
+Scope on `codex/scheduling-lifecycle`:
+
+- `src/App.tsx`
+- `convex/crm.ts`
+- `src/lib/crm-data.ts`
+- `netlify.toml`
+- `README.md`
+- `.gitignore`
+- `.codex/config.toml`
+- `.codex/agents/*.toml`
+- `PROJECT_CONTEXT.md`, `HANDOVER.md`, `TASK_LOG.md`, `DECISIONS.md`, `RELEASE_CHECKLIST.md`, `ROLLBACK.md`, and `docs/risk-register.md`
+
+Google Calendar and ICS work was intentionally removed and there is no calendar helper file to restore or roll back. Before a feature commit, inspect the complete diff and reverse only confirmed release-candidate files. Do not include the ignored `.codex/config.toml.broken-*` backups or unrelated user work. Avoid broad restore/reset commands; confirm exact file ownership and use a targeted patch or another recoverable method.
+
+After the feature is committed, prefer:
+
+```bash
+git revert <commit>
+```
+
+Then rerun `npm run lint`, an isolated production `npm run build`, focused scheduling checks, and `git diff --check`. If the feature is later deployed, Yasir approval and deployment verification are required before production rollback actions. No schema migration or production-data rollback is expected because neither has been performed.
+
 ## After A Safe Release Push
 
 If Yasir gave clear push/release approval and Safe Release Push Mode gates passed:
